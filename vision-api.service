@@ -1,0 +1,102 @@
+# =============================================================================
+#  vision-api.service  –  systemd unit for the Vision API Docker Compose stack
+#
+#  INSTALLATION (run as root or with sudo):
+#
+#  1. Copy this file to the systemd unit directory:
+#       sudo cp vision-api.service /etc/systemd/system/vision-api.service
+#
+#  2. Edit the three variables below to match your setup:
+#       WorkingDirectory  – absolute path to the cloned repository
+#       EnvironmentFile   – which env profile to use (or remove the line to
+#                           use the .env file in the WorkingDirectory)
+#
+#  3. Reload systemd and enable the unit:
+#       sudo systemctl daemon-reload
+#       sudo systemctl enable --now vision-api
+#
+#  4. Check status:
+#       sudo systemctl status vision-api
+#       journalctl -u vision-api -f
+#
+#  COMMON COMMANDS:
+#       sudo systemctl start   vision-api   # start
+#       sudo systemctl stop    vision-api   # graceful stop
+#       sudo systemctl restart vision-api   # restart
+#       sudo systemctl status  vision-api   # current state + last log lines
+#       journalctl -u vision-api -n 100     # last 100 log lines
+#       journalctl -u vision-api -f         # follow live logs
+#
+#  UPDATING THE APPLICATION:
+#       cd /opt/vision-api
+#       git pull
+#       sudo systemctl restart vision-api
+#       # systemd will run docker compose up --build automatically
+#
+# =============================================================================
+
+[Unit]
+Description=Vision API – Face Recognition & Barcode Detection Service
+Documentation=https://github.com/your-org/vision-api
+# Start after the network is up and Docker daemon is running
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# ── Path to the repository root ───────────────────────────────────────────────
+# Change this to wherever you cloned the repository.
+WorkingDirectory=/opt/vision-api
+
+# ── Environment profile ───────────────────────────────────────────────────────
+# Uncomment and adjust one of the lines below to select a configuration
+# profile, or leave both commented out to use the .env file in WorkingDirectory.
+#
+# EnvironmentFile=/opt/vision-api/envs/.env.medium
+# EnvironmentFile=/opt/vision-api/envs/.env.high
+# EnvironmentFile=/opt/vision-api/envs/.env.dev
+
+# ── User / Group ──────────────────────────────────────────────────────────────
+# Run as a dedicated service user (recommended) or as root if Docker requires it.
+# Create the user with:
+#   sudo useradd -r -s /sbin/nologin -G docker vision-api
+#
+# User=vision-api
+# Group=vision-api
+
+# ── Start ─────────────────────────────────────────────────────────────────────
+# --build   rebuilds the image if source files changed (safe to always include)
+# --remove-orphans  cleans up containers from old service definitions
+ExecStart=/usr/bin/docker compose up --build --remove-orphans --detach
+
+# ── Stop ──────────────────────────────────────────────────────────────────────
+# Timeout allows in-flight requests to finish before containers are killed.
+ExecStop=/usr/bin/docker compose down
+TimeoutStopSec=30
+
+# ── Reload (systemctl reload vision-api) ─────────────────────────────────────
+# Pulls new images / rebuilds without full downtime.
+ExecReload=/usr/bin/docker compose up --build --remove-orphans --detach
+
+# ── Restart policy ───────────────────────────────────────────────────────────
+Restart=on-failure
+RestartSec=10s
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Container logs are forwarded to journald automatically via Docker's
+# json-file log driver.  Follow with:  journalctl -u vision-api -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vision-api
+
+# ── Security hardening (optional, remove if they cause issues) ───────────────
+# PrivateTmp=yes
+# NoNewPrivileges=yes
+# ProtectSystem=strict
+# ReadWritePaths=/opt/vision-api
+
+[Install]
+WantedBy=multi-user.target

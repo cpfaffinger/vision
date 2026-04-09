@@ -1,0 +1,369 @@
+================================================================================
+  VISION API – DEVELOPER INTEGRATION GUIDE
+  Face Embedding, Search, Grouping, and Comparison
+================================================================================
+
+This guide explains how to integrate the Vision API into your application.
+It covers the full workflow from uploading an image to grouping faces by
+identity, with example requests, responses, and data structures.
+
+Base URL: http://your-server:8000
+Interactive Swagger UI: http://your-server:8000/docs
+Admin Dashboard:        http://your-server:8000/admin
+
+
+────────────────────────────────────────────────────────────────────────────────
+  CORE CONCEPT: THE face_id
+────────────────────────────────────────────────────────────────────────────────
+
+When you upload a photo, the API detects every face in it and returns a
+stable UUID called a face_id for each face.
+
+  face_id = "3f7a2b1c-e4d5-4a6b-9c8d-1e2f3a4b5c6d"
+
+Think of the face_id as a pointer to a cached embedding vector.
+The embedding is a high-dimensional numeric fingerprint of the face
+(e.g. 512 floats for ArcFace). You never need to handle the raw numbers —
+you just pass face_ids between API calls.
+
+face_ids are stored in the server cache for a configurable TTL (default 24 h).
+Pass `cache=true` on upload (default) to enable caching.
+
+
+================================================================================
+  STEP 1 – UPLOAD A PHOTO AND GET face_ids
+================================================================================
+
+Endpoint:  POST /faces/embed
+Purpose:   Detect all faces in an image, generate embeddings, return face_ids.
+
+──── Request (multipart/form-data) ────────────────────────────────────────────
+
+  curl -X POST "http://localhost:8000/faces/embed?cache=true" \
+       -F "file=@group_photo.jpg"
+
+  Query parameters:
+    cache   (bool, default true)   – persist embedding in server cache
+    ttl     (int, optional)        – override cache TTL in seconds
+
+──── Response ─────────────────────────────────────────────────────────────────
+
+  {
+    "source_file":  "group_photo.jpg",
+    "faces_found":  3,
+    "model":        "ArcFace",
+    "faces": [
+      {
+        "face_id":         "11111111-aaaa-bbbb-cccc-000000000001",  ← save this
+        "face_index":      0,                    ← position in image (0-based)
+        "face_confidence": 0.9987,               ← detector confidence (0–1)
+        "embedding_dim":   512,
+        "facial_area":     { "x": 120, "y": 45, "w": 98, "h": 112 },
+        "cached":          true
+      },
+      {
+        "face_id":         "22222222-aaaa-bbbb-cccc-000000000001",  ← save this
+        "face_index":      1,
+        "face_confidence": 0.9941,
+        "embedding_dim":   512,
+        "facial_area":     { "x": 340, "y": 60, "w": 85, "h": 100 },
+        "cached":          true
+      },
+      {
+        "face_id":         "33333333-aaaa-bbbb-cccc-000000000001",  ← save this
+        "face_index":      2,
+        "face_confidence": 0.9812,
+        "embedding_dim":   512,
+        "facial_area":     { "x": 560, "y": 30, "w": 91, "h": 107 },
+        "cached":          true
+      }
+    ]
+  }
+
+  ► YOUR APPLICATION SHOULD STORE ALL face_id values after each upload.
+    Map them to your own entities: photo ID, person slot, album, etc.
+
+  Key fields:
+    face_id         – stable UUID, use for all further API calls
+    face_index      – zero-based index of the face in the image (left → right)
+    face_confidence – how confident the detector is (1.0 = certain)
+    facial_area     – bounding box {x, y, w, h} in pixels (useful for UI overlays)
+    cached          – true means the embedding is stored and retrievable by face_id
+
+
+================================================================================
+  STEP 2 – UPLOAD MORE PHOTOS (REPEAT STEP 1)
+================================================================================
+
+Upload every photo in your collection. After each upload, collect all
+returned face_ids. The more photos you upload, the better the grouping
+will work.
+
+Example — three photos with a total of 7 faces:
+
+  photo_a.jpg  →  face_ids: [A1, A2, A3]
+  photo_b.jpg  →  face_ids: [B1, B2]
+  photo_c.jpg  →  face_ids: [C1, C2]
+
+  your_face_id_collection = [A1, A2, A3, B1, B2, C1, C2]
+
+
+================================================================================
+  STEP 3 – GROUP FACES BY IDENTITY
+================================================================================
+
+Endpoint:  POST /faces/group
+Purpose:   Given a list of face_ids, cluster them into identity groups.
+           You do NOT need to know how many groups/people there are.
+
+──── Request (JSON) ────────────────────────────────────────────────────────────
+
+  curl -X POST "http://localhost:8000/faces/group" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "face_ids": ["A1", "A2", "A3", "B1", "B2", "C1", "C2"],
+         "method": "hdbscan",
+         "min_cluster_size": 2,
+         "persist": true
+       }'
+
+  Parameters:
+    face_ids          (list[str], required)  – the face_ids to group
+    method            (str)                  – "hdbscan" (default) or "agglomerative"
+    min_cluster_size  (int, default 2)       – hdbscan: min faces per group
+    distance_threshold (float, default 0.45) – agglomerative only: cosine distance cutoff
+    persist           (bool, default true)   – save result as a session for later retrieval
+
+  Algorithm choice:
+    hdbscan       – recommended; density-based; naturally handles noise;
+                    no parameters to tune in most cases
+    agglomerative – hierarchical; use if you want to control tightness
+                    via distance_threshold (lower = fewer, tighter groups)
+
+──── Response ─────────────────────────────────────────────────────────────────
+
+  {
+    "groups": [
+      ["A1", "B2", "C1"],        ← group 0: these faces belong to person X
+      ["A2", "B1"],              ← group 1: these faces belong to person Y
+      ["A3", "C2"]               ← group 2: these faces belong to person Z
+    ],
+    "noise_face_ids": [],        ← faces that couldn't be assigned to any group
+    "n_groups":   3,
+    "n_noise":    0,
+    "n_input":    7,
+    "method":     "hdbscan",
+    "session_id": "9f8e7d6c-5b4a-3c2d-1e0f-9a8b7c6d5e4f",
+    "persisted":  true
+  }
+
+  ► groups is a list of lists.
+    Each inner list is one identity group (one person).
+    All face_ids in the same inner list are predicted to be the same person.
+
+  ► noise_face_ids contains faces the algorithm could not confidently
+    assign to any group (usually isolated or ambiguous faces).
+    With hdbscan, noise is expected for low-quality or single-occurrence faces.
+
+  ► session_id lets you retrieve this result later:
+    GET /sessions/{session_id}
+
+  Pseudocode to map back to your photos:
+    for group_index, face_id_list in enumerate(response["groups"]):
+        person_label = f"Person_{group_index + 1}"
+        for face_id in face_id_list:
+            photo = your_db.find_photo_by_face_id(face_id)
+            photo.assign_person(person_label)
+
+
+================================================================================
+  STEP 4 – SEARCH FOR SIMILAR FACES
+================================================================================
+
+Endpoint:  POST /faces/search
+Purpose:   Given ONE face_id (or raw embedding), find the most similar
+           faces in the entire cache. Useful for "find more photos of person X".
+
+──── Request (JSON) ────────────────────────────────────────────────────────────
+
+  curl -X POST "http://localhost:8000/faces/search" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "face_id":        "A1",
+         "top_k":          10,
+         "min_similarity": 0.55,
+         "exclude_self":   true
+       }'
+
+  Parameters:
+    face_id         (str)            – query: a cached face_id
+    embedding       (list[float])    – alternative: raw embedding vector
+    top_k           (int, default 5) – max results to return (1–100)
+    min_similarity  (float, 0–1)     – minimum similarity threshold
+    exclude_self    (bool, true)     – exclude the query face from results
+
+──── Response ─────────────────────────────────────────────────────────────────
+
+  {
+    "query_face_id": "A1",
+    "model":         "ArcFace",
+    "threshold":     0.40,
+    "searched":      7,
+    "results": [
+      {
+        "face_id":         "B2",
+        "similarity":      0.921456,   ← 1.0 = identical
+        "distance":        0.078544,   ← 0.0 = identical
+        "source_file":     "photo_b.jpg",
+        "face_confidence": 0.9912,
+        "model_name":      "ArcFace"
+      },
+      {
+        "face_id":         "C1",
+        "similarity":      0.887231,
+        "distance":        0.112769,
+        "source_file":     "photo_c.jpg",
+        "face_confidence": 0.9874,
+        "model_name":      "ArcFace"
+      }
+    ]
+  }
+
+  Results are sorted by similarity descending (best match first).
+
+  Interpreting similarity / distance:
+    similarity 0.9+   → almost certainly the same person
+    similarity 0.7–0.9 → likely the same person
+    similarity 0.5–0.7 → uncertain — inspect visually
+    similarity < 0.5   → different person (below default min_similarity)
+
+  The "verified" interpretation uses the model-specific distance threshold:
+    distance < threshold  →  same person (verified)
+    ArcFace threshold:  ~0.40
+    VGG-Face threshold: ~0.40
+
+
+================================================================================
+  STEP 5 – COMPARE TWO SPECIFIC FACES
+================================================================================
+
+Endpoint:  POST /faces/compare
+Purpose:   Direct 1:1 comparison of two faces.
+           Returns similarity score and a verified/not-verified verdict.
+
+──── Request (JSON) ────────────────────────────────────────────────────────────
+
+  curl -X POST "http://localhost:8000/faces/compare" \
+       -H "Content-Type: application/json" \
+       -d '{
+         "face_id_a": "A1",
+         "face_id_b": "B2"
+       }'
+
+──── Response ─────────────────────────────────────────────────────────────────
+
+  {
+    "similarity":  0.921456,
+    "distance":    0.078544,
+    "verified":    true,         ← distance < model threshold → same person
+    "threshold":   0.40,
+    "model":       "ArcFace",
+    "face_id_a":   "A1",
+    "face_id_b":   "B2"
+  }
+
+
+================================================================================
+  ASYNC PROCESSING (LARGE BATCHES)
+================================================================================
+
+For large photo collections, use the async endpoint to avoid HTTP timeouts:
+
+  POST /faces/embed/async
+  Body (JSON): { "image_b64": "<base64>", "source_file": "photo.jpg", "cache": true }
+  Response:    { "job_id": "...", "status": "PENDING", "queue_depth": 3 }
+
+  Poll for result:
+  GET /jobs/{job_id}
+  Response when done: { "status": "DONE", "result": { ...same as /faces/embed... } }
+
+  Alternatively, provide a webhook callback URL and receive the result
+  automatically when processing completes.
+
+
+================================================================================
+  CACHE MANAGEMENT
+================================================================================
+
+List cached faces:
+  GET /faces/cache?limit=50&offset=0
+
+Get a specific face:
+  GET /faces/cache/{face_id}
+
+Delete a specific face:
+  DELETE /faces/cache/{face_id}
+
+Purge all expired entries:
+  POST /admin/purge
+
+
+================================================================================
+  TYPICAL INTEGRATION FLOW (PSEUDOCODE)
+================================================================================
+
+  # --- Phase 1: Index your photo collection ---
+  face_id_map = {}   # your_photo_id → list of face_ids
+
+  for photo in your_collection:
+      response = POST /faces/embed  file=photo.file
+      face_id_map[photo.id] = [f["face_id"] for f in response["faces"]]
+      # optionally store facial_area for UI bounding-box overlays
+
+  # --- Phase 2: Group all faces ---
+  all_face_ids = flatten(face_id_map.values())
+  result = POST /faces/group  body={"face_ids": all_face_ids, "method": "hdbscan"}
+
+  # result["groups"] = [["fid1","fid2",...], ["fid3","fid4",...], ...]
+  for group_index, group_face_ids in enumerate(result["groups"]):
+      for fid in group_face_ids:
+          photo_id = reverse_lookup(face_id_map, fid)
+          tag_photo(photo_id, person=f"person_{group_index}")
+
+  # --- Phase 3: Search for a person across new uploads ---
+  new_face_id = POST /faces/embed  file=new_photo.file → faces[0]["face_id"]
+  matches = POST /faces/search  body={"face_id": new_face_id, "top_k": 5}
+  # matches["results"] lists the most similar cached faces
+
+
+================================================================================
+  ERROR REFERENCE
+================================================================================
+
+  HTTP 400 – Bad Request
+    FACE_NOT_FOUND          face_id not in cache or expired
+    EMBEDDING_DIM_MISMATCH  mixed models in one request
+    TOO_FEW_CLUSTERS        fewer than 2 face_ids provided
+    MISSING_PARAMETER       required field not supplied
+
+  HTTP 413 – Payload Too Large
+    FILE_TOO_LARGE          image exceeds MAX_UPLOAD_MB limit
+
+  HTTP 422 – Validation Error
+    Pydantic field validation failed (wrong type, out of range, etc.)
+
+  HTTP 503 – Service Unavailable
+    QUEUE_FULL              async job queue is at capacity
+
+
+================================================================================
+  ENVIRONMENT CONFIGURATION (docker-compose)
+================================================================================
+
+  MODEL_NAME=ArcFace          Recognition model  (ArcFace | VGG-Face)
+  DETECTOR_BACKEND=retinaface  Face detector      (retinaface | mtcnn | yolov8)
+  FACE_TTL_SECONDS=86400       Cache TTL for face embeddings (default 24 h)
+  GROUP_TTL_SECONDS=604800     Session TTL for grouping results (default 7 d)
+  MAX_UPLOAD_MB=20             Max image upload size
+
+================================================================================

@@ -1,0 +1,2924 @@
+<!DOCTYPE html>
+<html lang="de" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision API – Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Plotly loaded on-demand when Embedding Space tab is first used -->
+  <link rel="preconnect" href="https://cdn.plot.ly">
+  <style>
+    /* ── Custom dark palette on top of Bootstrap's native dark mode ── */
+    :root, [data-bs-theme="dark"] {
+      --bs-body-bg:         #0f1117;
+      --bs-body-color:      #e2e8f0;
+      --bs-secondary-color: #94a3b8;
+      --bs-border-color:    #2d3748;
+      --bs-card-bg:         #1a1d27;
+
+      --bg-base:  #0f1117;
+      --bg-card:  #1a1d27;
+      --bg-card2: #242736;
+      --border:   #2d3748;
+      --text:     #e2e8f0;
+      --muted:    #94a3b8;
+    }
+
+    body { background: var(--bg-base); }
+
+    /* Navbar */
+    .navbar { background: var(--bg-card) !important; border-bottom: 1px solid var(--border); }
+
+    /* Cards */
+    .card { background: var(--bg-card) !important; border-color: var(--border) !important; }
+    .card-header {
+      background: var(--bg-card2) !important;
+      border-bottom: 1px solid var(--border) !important;
+      font-weight: 600;
+      color: var(--text) !important;
+    }
+    .card-body { color: var(--text); }
+
+    /* Tables – Bootstrap dark mode handles most of it, just tweak hover */
+    .table { --bs-table-bg: transparent; --bs-table-border-color: var(--border); }
+    .table > thead > tr > th { color: var(--text) !important; background: var(--bg-card2) !important; border-bottom: 1px solid var(--border); }
+    .table > tbody > tr > td { color: var(--text) !important; vertical-align: middle; }
+    .table > tbody > tr:hover > td { background: #1e2535 !important; }
+
+    /* Tabs */
+    .nav-tabs { border-bottom: 1px solid var(--border); }
+    .nav-tabs .nav-link { color: var(--muted); border: none; border-radius: 0; padding: .6rem 1rem; }
+    .nav-tabs .nav-link.active { color: #fff !important; background: var(--bg-card2) !important; border: none; border-bottom: 2px solid #3b82f6 !important; }
+    .nav-tabs .nav-link:hover:not(.active) { color: var(--text); background: #1e293b; border: none; }
+
+    /* Forms */
+    .form-control, .form-select {
+      background-color: var(--bg-base) !important;
+      color: var(--text) !important;
+      border-color: var(--border) !important;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: #3b82f6 !important;
+      box-shadow: 0 0 0 2px rgba(59,130,246,.25) !important;
+    }
+    .form-control::placeholder { color: var(--muted); }
+    .form-label { color: var(--text); }
+    .form-check-label { color: var(--text); }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: 8px; padding: 32px 16px;
+      text-align: center; cursor: pointer; transition: all .2s; min-height: 140px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--bg-card);
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #3b82f6; background: #1e293b; }
+
+    /* Face / result cards */
+    .face-card {
+      background: var(--bg-base); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px; color: var(--text);
+    }
+
+    /* Modals */
+    .modal-content { background: var(--bg-card) !important; border-color: var(--border) !important; }
+    .modal-header { border-bottom: 1px solid var(--border) !important; }
+    .modal-title { color: var(--text) !important; }
+
+    /* Alerts */
+    .alert-success { --bs-alert-color: #d1fae5; --bs-alert-bg: #052e16; --bs-alert-border-color: #166534; }
+    .alert-warning { --bs-alert-color: #fef9c3; --bs-alert-bg: #2d1d01; --bs-alert-border-color: #854d0e; }
+    .alert-danger  { --bs-alert-color: #fee2e2; --bs-alert-bg: #1f0707; --bs-alert-border-color: #991b1b; }
+
+    /* JSON block */
+    pre.json {
+      background: #060a0f; color: #a8ff78;
+      border-radius: 6px; padding: 12px; font-size: 11.5px;
+      max-height: 420px; overflow: auto; margin: 0;
+      white-space: pre-wrap; word-break: break-all;
+      border: 1px solid var(--border);
+    }
+
+    /* Misc */
+    .stat-val { font-size: 2rem; font-weight: 700; line-height: 1; }
+    #status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .img-preview { max-height: 180px; max-width: 100%; border-radius: 6px; object-fit: contain; }
+    .bg-purple { background-color: #9333ea !important; }
+    .badge { font-size: .72em; }
+    .font-mono { font-family: ui-monospace, monospace; font-size: .82em; }
+    code { color: #a78bfa; }
+    .text-muted { color: var(--muted) !important; }
+    hr { border-color: var(--border); opacity: 1; }
+    .btn-xs { font-size: .75rem; padding: .15rem .4rem; }
+    details > summary { cursor: pointer; user-select: none; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
+
+    /* ── Tools ── */
+    .sim-bar-wrap { background: var(--bg-base); border-radius: 6px; height: 10px; overflow: hidden; border: 1px solid var(--border); }
+    .sim-bar      { height: 100%; border-radius: 6px; transition: width .4s ease; }
+    .verified-badge { font-size: 1.1rem; font-weight: 700; padding: 6px 14px; border-radius: 8px; }
+    .search-result-row { cursor: pointer; transition: background .15s; }
+    .search-result-row:hover td { background: #1e2535 !important; }
+    .sim-score { font-variant-numeric: tabular-nums; }
+
+    /* ── Visual Debugger ── */
+    .debug-wrap {
+      position: relative; background: #000;
+      border-radius: 8px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .debug-wrap canvas { max-width: 100%; height: auto; display: block; }
+    .debug-placeholder {
+      padding: 48px 24px; text-align: center;
+      color: var(--muted); font-size: .9rem;
+    }
+    .face-legend-dot {
+      width: 11px; height: 11px; border-radius: 2px;
+      display: inline-block; flex-shrink: 0; margin-top: 2px;
+    }
+    .face-legend-row {
+      display: flex; gap: 8px; padding: 5px 8px;
+      border-radius: 5px; background: var(--bg-base);
+      border: 1px solid var(--border); margin-bottom: 4px;
+      align-items: flex-start;
+    }
+    .debug-container { display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Grouping ── */
+    .sel-bar {
+      position: sticky; top: 0; z-index: 10;
+      background: #1e3a5f; border: 1px solid #3b82f6;
+      border-radius: 8px; padding: 10px 14px;
+      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    tr.selected td { background: rgba(59,130,246,.12) !important; }
+    .group-card {
+      border-left: 4px solid; border-radius: 6px;
+      background: var(--bg-card2); padding: 10px 12px; margin-bottom: 10px;
+    }
+    .group-card .group-title {
+      font-weight: 600; font-size: .85rem; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .face-chip {
+      display: inline-flex; flex-direction: column;
+      background: var(--bg-base); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 8px; font-size: .75rem;
+      min-width: 140px; margin: 3px;
+    }
+    .face-chip code { font-size: .7rem; }
+    .noise-section { opacity: .65; }
+
+    /* ── Manual Grouping Board ── */
+    .grp-board {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .grp-lane {
+      background: var(--bg-card2);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      min-height: 120px;
+      padding: 10px;
+      transition: border-color .15s, background .15s;
+      position: relative;
+    }
+    .grp-lane.drag-over-lane {
+      border-color: #3b82f6 !important;
+      background: #1e3a5f !important;
+    }
+    .grp-lane-header {
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 8px; font-size: .82rem; font-weight: 600;
+    }
+    .grp-lane-dot {
+      width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+    }
+    .grp-lane-name {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: inherit; font-weight: 600; font-size: .82rem;
+      cursor: text;
+    }
+    .grp-lane-name:focus { border-bottom: 1px solid #3b82f6; }
+    .grp-lane-chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 40px; }
+    .grp-lane-drop-hint {
+      width: 100%; text-align: center; color: var(--muted);
+      font-size: .75rem; padding: 8px 0; pointer-events: none;
+    }
+    /* Chips in the board — draggable */
+    .grp-chip {
+      display: inline-flex; flex-direction: column;
+      background: var(--bg-base); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 7px; font-size: .72rem;
+      cursor: grab; user-select: none; min-width: 110px; max-width: 180px;
+      transition: opacity .15s, box-shadow .15s;
+    }
+    .grp-chip:active { cursor: grabbing; opacity: .7; }
+    .grp-chip.dragging { opacity: .4; box-shadow: 0 0 0 2px #3b82f6; }
+    .grp-chip code { font-size: .65rem; color: #a78bfa; }
+    .grp-chip .chip-src {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 160px; color: var(--muted);
+    }
+    /* Upload-drop zone inside a lane */
+    .grp-lane-upload {
+      width: 100%; margin-top: 6px; padding: 5px;
+      border: 1px dashed var(--border); border-radius: 6px;
+      text-align: center; font-size: .72rem; color: var(--muted);
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .grp-lane-upload:hover { border-color: #3b82f6; background: #1e293b; }
+    /* Noise pool (source lane) */
+    .grp-noise-pool {
+      background: var(--bg-card);
+      border: 2px dashed #4b5568;
+      border-radius: 10px; padding: 10px;
+    }
+    /* Board toolbar */
+    .grp-board-toolbar {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    /* ── Embedding Space ── */
+    #proj-plot {
+      width: 100%; height: 580px;
+      background: var(--bg-base);
+      border-radius: 8px; border: 1px solid var(--border);
+    }
+    .proj-controls {
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .proj-legend {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;
+    }
+    .proj-legend-item {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--bg-card2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 3px 8px; font-size: .75rem;
+    }
+    .proj-legend-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    #proj-status {
+      font-size: .8rem; color: var(--muted);
+      min-height: 1.4em;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ──────────────────────────────────────────────────── -->
+<nav class="navbar navbar-dark px-3 py-2 mb-0">
+  <div class="d-flex align-items-center gap-2">
+    <span class="fw-bold fs-5">🔭 Vision API</span>
+    <span class="text-muted small">Admin</span>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <div class="d-flex align-items-center gap-2">
+      <span id="status-dot" style="background:#4b5563"></span>
+      <small id="status-text" class="text-muted">–</small>
+    </div>
+    <div class="d-flex align-items-center gap-1">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+        <label class="form-check-label text-muted small" for="auto-refresh">Auto-Refresh</label>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Tabs ──────────────────────────────────────────────────────── -->
+<div class="container-fluid px-3 pt-3">
+  <ul class="nav nav-tabs mb-3" id="main-tabs" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview" type="button">Overview</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-jobs" type="button">Jobs <span class="badge bg-secondary ms-1" id="jobs-badge">–</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-upload" type="button">Upload</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cache" type="button">Face Cache <span class="badge bg-secondary ms-1" id="cache-badge">–</span></button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-tools" type="button">🔧 Tools</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-embedding" type="button">🧭 Embedding Space</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sessions" type="button">Sessions</button></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ════════════════════════════════════ OVERVIEW ══════════════ -->
+    <div class="tab-pane fade show active" id="tab-overview">
+      <div class="row g-3 mb-3">
+
+        <!-- Config -->
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-header">⚙️ Konfiguration</div>
+            <div class="card-body p-3" id="config-body">
+              <div class="text-muted small">Lade…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Face Cache Stats -->
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-header">🗃️ Face Cache</div>
+            <div class="card-body p-3" id="cache-stats-body">
+              <div class="text-muted small">Lade…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Queue Stats -->
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-header">⚡ Job Queue</div>
+            <div class="card-body p-3" id="queue-stats-body">
+              <div class="text-muted small">Lade…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini Job Table -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          Letzte Jobs
+          <div class="d-flex align-items-center gap-2">
+            <small class="text-muted">Aktualisiert: <span id="last-updated">–</span></small>
+            <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadHealth()">↻</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0" id="mini-jobs-table">
+              <thead class="table-dark">
+                <tr><th>Job ID</th><th>Typ</th><th>Status</th><th>Eingereicht</th><th>Dauer</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-header">🔧 Schnellaktionen</div>
+        <div class="card-body d-flex gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-warning" onclick="purgeExpired()">🗑️ Abgelaufene bereinigen</button>
+          <button class="btn btn-sm btn-outline-info" onclick="window.open('/docs','_blank')">📖 Swagger UI öffnen</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="window.open('/health','_blank')">🩺 /health (raw)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════ JOBS ══════════════════ -->
+    <div class="tab-pane fade" id="tab-jobs">
+      <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <div class="btn-group btn-group-sm" id="status-filter">
+          <button class="btn btn-outline-secondary active" data-status="">Alle</button>
+          <button class="btn btn-outline-warning" data-status="PENDING">Pending</button>
+          <button class="btn btn-outline-primary" data-status="RUNNING">Running</button>
+          <button class="btn btn-outline-success" data-status="DONE">Done</button>
+          <button class="btn btn-outline-danger" data-status="FAILED">Failed</button>
+          <button class="btn btn-outline-secondary" data-status="TIMEOUT">Timeout</button>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadJobs()">↻ Aktualisieren</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteAllFinished()">🗑️ Abgeschlossene löschen</button>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="jobs-table">
+              <thead class="table-dark">
+                <tr>
+                  <th>Job ID</th>
+                  <th>Typ</th>
+                  <th>Status</th>
+                  <th>Eingereicht</th>
+                  <th>Gestartet</th>
+                  <th>Dauer</th>
+                  <th>Callback</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="jobs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════ UPLOAD ════════════════ -->
+    <div class="tab-pane fade" id="tab-upload">
+      <ul class="nav nav-tabs mb-3" id="upload-tabs">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#up-embed" type="button">😊 Face Embed</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#up-cluster" type="button">🔵 Face Cluster</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#up-barcode" type="button">📷 Barcode</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#up-embed-async" type="button">⚡ Embed (Async)</button></li>
+      </ul>
+      <div class="tab-content">
+
+        <!-- Face Embed -->
+        <div class="tab-pane fade show active" id="up-embed">
+          <!-- Controls row -->
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-lg-5">
+              <div class="drop-zone" id="dz-embed" onclick="document.getElementById('fi-embed').click()">
+                <div id="dz-embed-inner">
+                  <div class="fs-1 mb-2">🖼️</div>
+                  <p class="mb-1 text-muted small">Bild hierher ziehen oder klicken</p>
+                  <small class="text-muted">JPEG, PNG, WEBP, BMP, TIFF</small>
+                </div>
+              </div>
+              <input type="file" id="fi-embed" accept="image/*" class="d-none" onchange="previewFile('embed')">
+            </div>
+            <div class="col-lg-4 d-flex flex-column gap-2">
+              <div class="d-flex align-items-center gap-3">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="embed-cache" checked>
+                  <label class="form-check-label small" for="embed-cache">Cache</label>
+                </div>
+                <div class="flex-grow-1">
+                  <label class="form-label small text-muted mb-1">TTL (Sek.)</label>
+                  <input type="number" class="form-control form-control-sm" id="embed-ttl" placeholder="Standard" min="60">
+                </div>
+              </div>
+              <button class="btn btn-primary w-100" onclick="doEmbed()">
+                😊 Einbetten &amp; Overlay
+              </button>
+            </div>
+          </div>
+          <!-- Result + debug canvas (full width) -->
+          <div id="embed-result"></div>
+        </div>
+
+        <!-- Face Cluster -->
+        <div class="tab-pane fade" id="up-cluster">
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-lg-5">
+              <div class="drop-zone" id="dz-cluster" onclick="document.getElementById('fi-cluster').click()">
+                <div id="dz-cluster-inner">
+                  <div class="fs-1 mb-2">🔵</div>
+                  <p class="mb-1 text-muted small">Bild hierher ziehen oder klicken</p>
+                </div>
+              </div>
+              <input type="file" id="fi-cluster" accept="image/*" class="d-none" onchange="previewFile('cluster')">
+            </div>
+            <div class="col-lg-4 d-flex flex-column gap-2">
+              <label class="form-label small text-muted d-flex justify-content-between mb-0">
+                Min. Ähnlichkeit <strong><span id="sim-val">0.60</span></strong>
+              </label>
+              <input type="range" class="form-range" id="cluster-sim" min="0" max="1" step="0.05" value="0.60"
+                oninput="document.getElementById('sim-val').textContent=parseFloat(this.value).toFixed(2)">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="cluster-cache" checked>
+                <label class="form-check-label small" for="cluster-cache">Cache</label>
+              </div>
+              <button class="btn btn-primary w-100" onclick="doCluster()">
+                🔵 Clustern &amp; Overlay
+              </button>
+            </div>
+          </div>
+          <div id="cluster-result"></div>
+        </div>
+
+        <!-- Barcode -->
+        <div class="tab-pane fade" id="up-barcode">
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-lg-5">
+              <div class="drop-zone" id="dz-barcode" onclick="document.getElementById('fi-barcode').click()">
+                <div id="dz-barcode-inner">
+                  <div class="fs-1 mb-2">📷</div>
+                  <p class="mb-1 text-muted small">Bild mit Barcode hierher ziehen</p>
+                </div>
+              </div>
+              <input type="file" id="fi-barcode" accept="image/*" class="d-none" onchange="previewFile('barcode')">
+            </div>
+            <div class="col-lg-4 d-flex align-items-end">
+              <button class="btn btn-primary w-100" onclick="doBarcode()">
+                📷 Erkennen &amp; Overlay
+              </button>
+            </div>
+          </div>
+          <div id="barcode-result"></div>
+        </div>
+
+        <!-- Embed Async -->
+        <div class="tab-pane fade" id="up-embed-async">
+          <div class="row g-3 align-items-start mb-3">
+            <div class="col-lg-5">
+              <div class="drop-zone" id="dz-async" onclick="document.getElementById('fi-async').click()">
+                <div id="dz-async-inner">
+                  <div class="fs-1 mb-2">⚡</div>
+                  <p class="mb-1 text-muted small">Bilder hierher ziehen oder klicken</p>
+                  <small class="text-muted">Mehrfachauswahl möglich</small>
+                </div>
+              </div>
+              <input type="file" id="fi-async" accept="image/*" class="d-none" multiple onchange="previewFile('async')">
+            </div>
+            <div class="col-lg-4 d-flex flex-column gap-2">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="async-cache" checked>
+                <label class="form-check-label small" for="async-cache">Ergebnisse cachen</label>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <label class="form-label small text-muted mb-0 text-nowrap">Parallelität</label>
+                <input type="number" class="form-control form-control-sm" id="async-concurrency"
+                  value="3" min="1" max="20" style="width:70px">
+                <small class="text-muted">(max. gleichzeit. Jobs)</small>
+              </div>
+              <button class="btn btn-warning w-100" onclick="doEmbedAsync()">
+                ⚡ Alle Jobs einreihen
+              </button>
+            </div>
+          </div>
+          <div id="async-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════ FACE CACHE ════════════ -->
+    <div class="tab-pane fade" id="tab-cache">
+
+      <!-- Selection + Grouping Bar (hidden until selection) -->
+      <div class="sel-bar d-none" id="sel-bar">
+        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <span class="fw-bold text-white" id="sel-count-label">0 ausgewählt</span>
+          <button class="btn btn-xs btn-outline-light py-0" onclick="selectCurrentPage()">Seite ✓</button>
+          <button class="btn btn-xs btn-outline-light py-0" onclick="selectAll()">Alle laden ✓</button>
+          <button class="btn btn-xs btn-outline-secondary py-0" onclick="clearSelection()">✕ Auswahl</button>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <select class="form-select form-select-sm" id="grp-method" style="width:170px" onchange="updateGroupOptions()">
+            <option value="connected">Connected (empfohlen)</option>
+            <option value="hdbscan">HDBSCAN (auto)</option>
+            <option value="agglomerative">Agglomerative</option>
+          </select>
+          <!-- Connected components: similarity threshold -->
+          <div id="opt-connected" class="d-flex align-items-center gap-1">
+            <label class="text-white small mb-0" title="Min. Ähnlichkeit damit zwei Gesichter als gleiche Person gelten">Ähnlichkeit</label>
+            <input type="number" class="form-control form-control-sm" id="grp-sim-threshold" value="0.65" min="0" max="1" step="0.05" style="width:70px">
+          </div>
+          <!-- HDBSCAN: min cluster size -->
+          <div id="opt-hdbscan" class="d-flex align-items-center gap-1 d-none">
+            <label class="text-white small mb-0" title="Mindestanzahl Gesichter pro Gruppe">Min. Cluster</label>
+            <input type="number" class="form-control form-control-sm" id="grp-min-cluster" value="2" min="2" style="width:60px">
+          </div>
+          <!-- Agglomerative: distance threshold -->
+          <div id="opt-agglomerative" class="d-flex align-items-center gap-1 d-none">
+            <label class="text-white small mb-0" title="Cosine-Distanz-Schwellwert (0 = sehr ähnlich, 2 = maximal verschieden)">Distanz</label>
+            <input type="number" class="form-control form-control-sm" id="grp-dist" value="0.45" min="0" max="2" step="0.05" style="width:70px">
+          </div>
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="grp-persist" checked>
+            <label class="form-check-label text-white small" for="grp-persist">Speichern</label>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-primary ms-auto flex-shrink-0" onclick="runGrouping()">
+          🔗 Gruppieren
+        </button>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadFaceCache(0)">↻ Aktualisieren</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="purgeExpired()">🗑️ Abgelaufene bereinigen</button>
+        <small class="text-muted ms-auto" id="cache-info">–</small>
+      </div>
+
+      <!-- Face table -->
+      <div class="card mb-3">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="cache-table">
+              <thead class="table-dark">
+                <tr>
+                  <th style="width:32px">
+                    <input type="checkbox" class="form-check-input" id="chk-all-page" title="Aktuelle Seite" onchange="togglePageSelection(this.checked)">
+                  </th>
+                  <th>Face ID</th>
+                  <th>Quelldatei</th>
+                  <th>Modell</th>
+                  <th>Dim</th>
+                  <th>Konfidenz</th>
+                  <th title="Schärfe / Bildqualität des Gesichts (0 = unscharf, 1 = scharf)">Qualität</th>
+                  <th>Läuft ab</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cache-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mb-3 align-items-center" id="cache-pag"></div>
+
+      <!-- Grouping result -->
+      <div id="grouping-result"></div>
+    </div>
+
+    <!-- ════════════════════════════════════ TOOLS ═══════════════════ -->
+    <div class="tab-pane fade" id="tab-tools">
+
+      <!-- shared datalist populated from cache -->
+      <datalist id="face-id-datalist"></datalist>
+
+      <ul class="nav nav-tabs mb-3" id="tools-tabs">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tool-search"  type="button">🔍 Face Search</button></li>
+        <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tool-compare" type="button">⚖️ Face Compare</button></li>
+        <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#tool-group"   type="button">🔗 Face Group</button></li>
+      </ul>
+
+      <div class="tab-content">
+
+        <!-- ── Face Search ─────────────────────────────────────────────── -->
+        <div class="tab-pane fade show active" id="tool-search">
+          <div class="row g-3 mb-3 align-items-start">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">🔍 Ähnliche Gesichter suchen</div>
+                <div class="card-body d-flex flex-column gap-3">
+                  <div>
+                    <label class="form-label small text-muted mb-1">Query Face ID <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm font-mono" id="search-face-id"
+                      list="face-id-datalist" placeholder="face_id aus Cache eingeben…">
+                    <div class="form-text">Tipp: Tab-Autovervollständigung aus Cache-Einträgen</div>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label small text-muted d-flex justify-content-between mb-1">
+                        Top K <strong><span id="search-topk-val">5</span></strong>
+                      </label>
+                      <input type="range" class="form-range" id="search-topk" min="1" max="50" value="5"
+                        oninput="document.getElementById('search-topk-val').textContent=this.value">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small text-muted d-flex justify-content-between mb-1">
+                        Min. Ähnlichkeit <strong><span id="search-minsim-val">0.50</span></strong>
+                      </label>
+                      <input type="range" class="form-range" id="search-minsim" min="0" max="1" step="0.05" value="0.50"
+                        oninput="document.getElementById('search-minsim-val').textContent=parseFloat(this.value).toFixed(2)">
+                    </div>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="search-exclude-self" checked>
+                    <label class="form-check-label small" for="search-exclude-self">Query-Face aus Ergebnissen ausschließen</label>
+                  </div>
+                  <button class="btn btn-primary" onclick="doFaceSearch()">🔍 Suchen</button>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7" id="search-result">
+              <div class="debug-placeholder border rounded" style="border-color:var(--border)!important">
+                <div class="fs-2 mb-2">🔍</div>
+                <div class="text-muted small">Ergebnisse erscheinen hier</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Face Compare ────────────────────────────────────────────── -->
+        <div class="tab-pane fade" id="tool-compare">
+          <div class="row g-3 mb-3 align-items-start">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">⚖️ Zwei Gesichter vergleichen</div>
+                <div class="card-body d-flex flex-column gap-3">
+                  <div>
+                    <label class="form-label small text-muted mb-1">Face ID A <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm font-mono" id="compare-face-a"
+                      list="face-id-datalist" placeholder="Erste face_id…">
+                  </div>
+                  <div>
+                    <label class="form-label small text-muted mb-1">Face ID B <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control form-control-sm font-mono" id="compare-face-b"
+                      list="face-id-datalist" placeholder="Zweite face_id…">
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-primary flex-grow-1" onclick="doFaceCompare()">⚖️ Vergleichen</button>
+                    <button class="btn btn-outline-secondary" onclick="swapCompareIds()" title="Tauschen">⇅</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7" id="compare-result">
+              <div class="debug-placeholder border rounded" style="border-color:var(--border)!important">
+                <div class="fs-2 mb-2">⚖️</div>
+                <div class="text-muted small">Ergebnis erscheint hier</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Face Group ──────────────────────────────────────────────── -->
+        <div class="tab-pane fade" id="tool-group">
+          <div class="row g-3 mb-3 align-items-start">
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  🔗 Gesichter gruppieren
+                  <button class="btn btn-xs btn-outline-secondary py-0" onclick="loadGroupFaceIds()">
+                    ↺ Aus Cache laden
+                  </button>
+                </div>
+                <div class="card-body d-flex flex-column gap-3">
+                  <div>
+                    <label class="form-label small text-muted mb-1">
+                      Face IDs <span class="text-danger">*</span>
+                      <span class="text-muted ms-2" id="group-ids-count"></span>
+                    </label>
+                    <textarea class="form-control form-control-sm font-mono" id="group-face-ids"
+                      rows="8" placeholder="Eine face_id pro Zeile…"
+                      oninput="updateGroupIdCount()"></textarea>
+                    <div class="form-text">Mindestens 2 · eine ID pro Zeile</div>
+                  </div>
+                  <div class="row g-2 align-items-end">
+                    <div class="col-6">
+                      <label class="form-label small text-muted mb-1">Algorithmus</label>
+                      <select class="form-select form-select-sm" id="tool-grp-method" onchange="updateToolGroupOptions()">
+                        <option value="connected">Connected (empfohlen)</option>
+                        <option value="hdbscan">HDBSCAN (auto)</option>
+                        <option value="agglomerative">Agglomerative</option>
+                      </select>
+                    </div>
+                    <div class="col-6" id="tool-opt-connected">
+                      <label class="form-label small text-muted mb-1">Min. Ähnlichkeit</label>
+                      <input type="number" class="form-control form-control-sm" id="tool-grp-sim-threshold" value="0.65" min="0" max="1" step="0.05">
+                    </div>
+                    <div class="col-6 d-none" id="tool-opt-hdbscan">
+                      <label class="form-label small text-muted mb-1">Min. Cluster</label>
+                      <input type="number" class="form-control form-control-sm" id="tool-grp-min-cluster" value="2" min="2">
+                    </div>
+                    <div class="col-6 d-none" id="tool-opt-agglomerative">
+                      <label class="form-label small text-muted mb-1">Distanz-Schwellwert</label>
+                      <input type="number" class="form-control form-control-sm" id="tool-grp-dist" value="0.45" min="0" max="2" step="0.05">
+                    </div>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="tool-grp-persist" checked>
+                    <label class="form-check-label small" for="tool-grp-persist">Ergebnis als Session speichern</label>
+                  </div>
+                  <button class="btn btn-primary" onclick="doFaceGroup()">🔗 Gruppieren</button>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-7" id="tool-group-result">
+              <div class="debug-placeholder border rounded" style="border-color:var(--border)!important">
+                <div class="fs-2 mb-2">🔗</div>
+                <div class="text-muted small">Gruppen erscheinen hier</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- tools tab-content -->
+    </div>
+
+    <!-- ════════════════════════════════════ EMBEDDING SPACE ══════ -->
+    <div class="tab-pane fade" id="tab-embedding">
+      <div class="row g-3">
+
+        <!-- ── Left: controls + upload ── -->
+        <div class="col-lg-3">
+
+            <!-- Photo upload → primary entry point -->
+          <div class="card mb-3">
+            <div class="card-header">📷 Foto hochladen</div>
+            <div class="card-body p-3 d-flex flex-column gap-2">
+              <div class="small text-muted">
+                Lade ein Foto hoch — erkannte Gesichter erscheinen als
+                <span style="color:#facc15;font-weight:600">★ Sterne</span> im Plot.
+                Der Plot wird automatisch berechnet.
+              </div>
+              <div class="drop-zone" id="proj-drop" onclick="document.getElementById('proj-file-input').click()"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="event.preventDefault();this.classList.remove('drag-over');projHandleDrop(event)">
+                <input type="file" id="proj-file-input" accept="image/*" class="d-none"
+                       onchange="projHandleFile(this.files[0])">
+                <div id="proj-upload-preview" class="text-muted small text-center">
+                  📁 Klicken oder Bild hierher ziehen
+                </div>
+              </div>
+              <div id="proj-upload-status" class="small text-muted" style="min-height:1.2em"></div>
+              <div id="proj-upload-faces" class="d-flex flex-column gap-1"></div>
+            </div>
+          </div>
+
+          <!-- Projection settings -->
+          <div class="card mb-3">
+            <div class="card-header">⚙️ Einstellungen</div>
+            <div class="card-body p-3 d-flex flex-column gap-3">
+
+              <div>
+                <label class="form-label small mb-1">Algorithmus</label>
+                <select class="form-select form-select-sm" id="proj-method">
+                  <option value="pca">PCA — schnell, linear</option>
+                  <option value="tsne" selected>t-SNE — beste Cluster-Trennung</option>
+                  <option value="umap">UMAP — beste Qualität (umap-learn nötig)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="form-label small mb-1">Dimensionen</label>
+                <div class="btn-group btn-group-sm w-100" role="group">
+                  <input type="radio" class="btn-check" name="proj-dims" id="dim2" value="2" checked>
+                  <label class="btn btn-outline-secondary" for="dim2">2D</label>
+                  <input type="radio" class="btn-check" name="proj-dims" id="dim3" value="3">
+                  <label class="btn btn-outline-secondary" for="dim3">3D</label>
+                </div>
+              </div>
+
+              <div>
+                <label class="form-label small mb-1">Max. Punkte</label>
+                <input type="number" class="form-control form-control-sm" id="proj-limit"
+                       value="500" min="10" max="2000" step="50">
+              </div>
+
+              <button class="btn btn-primary btn-sm w-100" onclick="runProjection()">
+                <span id="proj-spinner" class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
+                ▶ Alle Cache-Embeddings projizieren
+              </button>
+
+              <!-- Session coloring — clearly optional -->
+              <details>
+                <summary class="small text-muted" style="cursor:pointer;user-select:none">
+                  🎨 Optional: Einfärben nach Gruppen-Session
+                </summary>
+                <div class="mt-2">
+                  <div class="small text-muted mb-1">
+                    Wähle eine Session aus einem vorherigen
+                    <code>/faces/group</code> Aufruf — Punkte werden
+                    dann nach Personen eingefärbt.
+                    Ohne Auswahl sind alle Punkte grau.
+                  </div>
+                  <select class="form-select form-select-sm mt-1" id="proj-session">
+                    <option value="">— keine Session —</option>
+                  </select>
+                </div>
+              </details>
+
+              <div id="proj-status" class="small text-muted" style="min-height:1.2em"></div>
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div class="card">
+            <div class="card-header">🎨 Legende</div>
+            <div class="card-body p-2">
+              <div class="proj-legend" id="proj-legend">
+                <span class="text-muted small">Noch keine Projection berechnet</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Right: plot + detail ── -->
+        <div class="col-lg-9">
+          <div id="proj-plot" style="width:100%;height:600px;background:var(--bg-base);border-radius:8px;border:1px solid var(--border)">
+            <div class="d-flex align-items-center justify-content-center h-100 text-muted small">
+              Einstellungen wählen und „Projection berechnen" klicken
+            </div>
+          </div>
+
+          <!-- Selected point detail -->
+          <div id="proj-point-detail" class="mt-3 d-none">
+            <div class="card">
+              <div class="card-header small fw-semibold">📍 Ausgewählter Punkt</div>
+              <div class="card-body p-3">
+                <div class="row g-2 align-items-center" id="proj-point-body"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- .row -->
+    </div><!-- #tab-embedding -->
+
+    <!-- ════════════════════════════════════ SESSIONS ══════════════ -->
+    <div class="tab-pane fade" id="tab-sessions">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadSessions()">↻ Aktualisieren</button>
+        <small class="text-muted ms-auto" id="sessions-info">–</small>
+      </div>
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-dark">
+                <tr><th>Session ID</th><th>Methode</th><th>Eingabe</th><th>Gruppen</th><th>Noise</th><th>Erstellt</th><th>Läuft ab</th><th></th></tr>
+              </thead>
+              <tbody id="sessions-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- tab-content -->
+</div><!-- container -->
+
+<!-- ── Job Detail Modal ────────────────────────────────────────── -->
+<div class="modal fade" id="job-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title font-mono" id="modal-title"></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2">
+        <pre class="json" id="modal-json"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Session Detail Modal ────────────────────────────────────── -->
+<div class="modal fade" id="session-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title font-mono" id="session-modal-title"></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2">
+        <pre class="json" id="session-modal-json"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ═══════════════════════════════════════ UTILS ═══════════════════════════
+const fmtTs  = ts  => ts ? new Date(ts * 1000).toLocaleString('de-DE', {dateStyle:'short',timeStyle:'medium'}) : '–';
+const fmtDur = s   => s != null ? s.toFixed(1) + ' s' : '–';
+const fmtExp = sec => {
+  if (sec == null || isNaN(sec)) return '<span class="text-muted">–</span>';
+  if (sec <= 0) return '<span class="text-danger">Abgelaufen</span>';
+  if (sec < 3600) return `<span class="text-warning">${(sec/60).toFixed(0)} min</span>`;
+  return `<span class="text-muted">${(sec/3600).toFixed(1)} h</span>`;
+};
+
+const fmtQuality = q => {
+  if (q == null) return '<span class="text-muted">–</span>';
+  const pct = (q * 100).toFixed(0);
+  const cls = q >= 0.75 ? 'text-success' : q >= 0.40 ? 'text-warning' : 'text-danger';
+  const icon = q >= 0.75 ? '●' : q >= 0.40 ? '◐' : '○';
+  return `<span class="${cls}" title="Qualitätsscore: ${q.toFixed(3)}">${icon} ${pct}%</span>`;
+};
+
+const STATUS_COLOR = {
+  PENDING: 'bg-warning text-dark', RUNNING: 'bg-primary',
+  DONE: 'bg-success', FAILED: 'bg-danger', TIMEOUT: 'bg-purple',
+};
+const badge = s => `<span class="badge ${STATUS_COLOR[s]||'bg-secondary'}">${s}</span>`;
+
+const spinner = () => '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+
+async function fetchJson(input, init) {
+  const r = await fetch(input, init);
+  const text = await r.text();
+  let d;
+  try {
+    d = JSON.parse(text);
+  } catch(_) {
+    const preview = text.slice(0, 400) || '(leere Antwort)';
+    throw new Error(`HTTP ${r.status} – Server-Antwort ist kein JSON:\n${preview}`);
+  }
+  return { r, d };
+}
+
+function setEl(id, html) { document.getElementById(id).innerHTML = html; }
+
+function resultCard(title, data, err) {
+  const cls = err ? 'border-danger' : 'border-success';
+  const hcls = err ? 'text-danger' : 'text-success';
+  return `<div class="card ${cls} mt-2">
+    <div class="card-header py-1 small ${hcls}">${title}</div>
+    <div class="card-body p-2"><pre class="json">${JSON.stringify(data, null, 2)}</pre></div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════ HEALTH / OVERVIEW ═══════════════
+async function loadHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+
+    setEl('status-dot', '');
+    const dot = document.getElementById('status-dot');
+    dot.style.background = d.status === 'ok' ? '#22c55e' : '#ef4444';
+    document.getElementById('status-text').textContent = d.status === 'ok' ? 'Online' : 'Fehler';
+    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('de-DE');
+
+    // Config card
+    setEl('config-body', `
+      <dl class="row mb-0 small">
+        <dt class="col-sm-5 text-muted">Modell</dt>
+        <dd class="col-sm-7"><code>${d.config.model}</code></dd>
+        <dt class="col-sm-5 text-muted">Detektor</dt>
+        <dd class="col-sm-7"><code>${d.config.detector}</code></dd>
+        <dt class="col-sm-5 text-muted">Max Upload</dt>
+        <dd class="col-sm-7">${d.config.max_upload_mb} MB</dd>
+        <dt class="col-sm-5 text-muted">Face TTL</dt>
+        <dd class="col-sm-7">${(d.config.face_ttl_seconds/3600).toFixed(0)} h</dd>
+        <dt class="col-sm-5 text-muted">Session TTL</dt>
+        <dd class="col-sm-7">${(d.config.group_session_ttl_seconds/86400).toFixed(1)} d</dd>
+      </dl>`);
+
+    // Cache stats
+    const c = d.cache.faces;
+    document.getElementById('cache-badge').textContent = c.active;
+    setEl('cache-stats-body', `
+      <div class="d-flex justify-content-around text-center mb-2">
+        <div><div class="stat-val text-info">${c.active}</div><small class="text-muted">Aktiv</small></div>
+        <div><div class="stat-val text-warning">${c.expired}</div><small class="text-muted">Abgelaufen</small></div>
+        <div><div class="stat-val">${c.total}</div><small class="text-muted">Gesamt</small></div>
+      </div>
+      <hr class="my-1" style="border-color:var(--border)">
+      <div class="text-center small">
+        <span class="text-muted">Aktive Sessionen: </span>
+        <strong>${d.cache.group_sessions_active}</strong>
+      </div>`);
+
+    // Queue stats
+    const q = d.queue;
+    const jc = q.job_counts || {};
+    setEl('queue-stats-body', `
+      <div class="d-flex justify-content-around text-center mb-2">
+        <div><div class="stat-val text-warning">${q.pending}</div><small class="text-muted">Pending</small></div>
+        <div><div class="stat-val text-primary">${q.running}</div><small class="text-muted">Running</small></div>
+        <div><div class="stat-val text-muted">${q.concurrency}</div><small class="text-muted">Workers</small></div>
+        <div><div class="stat-val text-muted">${q.max_size}</div><small class="text-muted">Max</small></div>
+      </div>
+      <div class="d-flex flex-wrap gap-1 justify-content-center">
+        ${Object.entries(jc).map(([s,n]) =>
+          `<span class="badge ${STATUS_COLOR[s]||'bg-secondary'}">${s}: ${n}</span>`
+        ).join('')}
+      </div>`);
+
+    // Mini jobs
+    const jr = await fetch('/jobs?limit=8');
+    const jd = await jr.json();
+    document.getElementById('jobs-badge').textContent = jd.count;
+    document.querySelector('#mini-jobs-table tbody').innerHTML =
+      jd.jobs.slice(0,8).map(j => `<tr>
+        <td class="font-mono">${j.job_id.slice(0,13)}…</td>
+        <td><span class="badge bg-secondary">${j.job_type}</span></td>
+        <td>${badge(j.status)}</td>
+        <td><small class="text-muted">${fmtTs(j.submitted_at)}</small></td>
+        <td>${fmtDur(j.duration_seconds)}</td>
+      </tr>`).join('') ||
+      '<tr><td colspan="5" class="text-muted text-center py-3">Keine Jobs</td></tr>';
+
+  } catch(e) {
+    document.getElementById('status-dot').style.background = '#ef4444';
+    document.getElementById('status-text').textContent = 'Nicht erreichbar';
+    console.error(e);
+  }
+}
+
+// ═══════════════════════════════════════ JOBS ════════════════════════════
+let jobFilter = '';
+
+document.getElementById('status-filter').addEventListener('click', e => {
+  const btn = e.target.closest('[data-status]');
+  if (!btn) return;
+  jobFilter = btn.dataset.status;
+  document.querySelectorAll('#status-filter button').forEach(b => {
+    b.classList.remove('active');
+    b.classList.toggle('active', b.dataset.status === jobFilter);
+  });
+  loadJobs();
+});
+
+async function loadJobs() {
+  const url = jobFilter ? `/jobs?limit=200&status=${jobFilter}` : '/jobs?limit=200';
+  const r = await fetch(url);
+  const d = await r.json();
+  document.getElementById('jobs-badge').textContent = d.count;
+
+  document.getElementById('jobs-tbody').innerHTML =
+    d.jobs.map(j => `<tr>
+      <td class="font-mono small">${j.job_id}</td>
+      <td><span class="badge bg-secondary">${j.job_type}</span></td>
+      <td>${badge(j.status)}</td>
+      <td><small class="text-muted">${fmtTs(j.submitted_at)}</small></td>
+      <td><small class="text-muted">${fmtTs(j.started_at)}</small></td>
+      <td class="text-nowrap">${fmtDur(j.duration_seconds)}</td>
+      <td><small class="text-muted">${j.callback_url ? '✓' : '–'}</small></td>
+      <td class="text-nowrap">
+        <button class="btn btn-xs btn-outline-secondary py-0 px-1" onclick="showJob('${j.job_id}')">Details</button>
+        ${['DONE','FAILED','TIMEOUT'].includes(j.status)
+          ? `<button class="btn btn-xs btn-outline-danger py-0 px-1 ms-1" onclick="deleteJob('${j.job_id}')">✕</button>`
+          : ''}
+      </td>
+    </tr>`).join('') ||
+    '<tr><td colspan="8" class="text-muted text-center py-4">Keine Jobs gefunden</td></tr>';
+}
+
+async function showJob(jobId) {
+  const r = await fetch(`/jobs/${jobId}`);
+  const d = await r.json();
+  document.getElementById('modal-title').textContent = `${jobId}  –  ${d.status}`;
+  document.getElementById('modal-json').textContent = JSON.stringify(d, null, 2);
+  new bootstrap.Modal(document.getElementById('job-modal')).show();
+}
+
+async function deleteJob(jobId) {
+  if (!confirm(`Job ${jobId.slice(0,8)}… löschen?`)) return;
+  await fetch(`/jobs/${jobId}`, { method: 'DELETE' });
+  loadJobs();
+}
+
+async function deleteAllFinished() {
+  if (!confirm('Alle abgeschlossenen Jobs (DONE/FAILED/TIMEOUT) löschen?')) return;
+  const r = await fetch('/jobs?limit=500');
+  const d = await r.json();
+  const finished = d.jobs.filter(j => ['DONE','FAILED','TIMEOUT'].includes(j.status));
+  await Promise.all(finished.map(j => fetch(`/jobs/${j.job_id}`, { method: 'DELETE' })));
+  loadJobs();
+  loadHealth();
+}
+
+// ═══════════════════════════════════════ DRAG & DROP ═════════════════════
+function setupDropZone(type, inputId, innerId, dzId, multiple = false) {
+  const dz = document.getElementById(dzId);
+  if (!dz) return;
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (!files.length) return;
+    const dt = new DataTransfer();
+    if (multiple) {
+      [...files].forEach(f => dt.items.add(f));
+    } else {
+      dt.items.add(files[0]);
+    }
+    document.getElementById(inputId).files = dt.files;
+    previewFile(type);
+  });
+}
+
+// stores the last loaded data URL per upload-type for overlay drawing
+const previewDataUrls = {};
+
+function previewFile(type) {
+  const configs = {
+    embed:   { fi: 'fi-embed',   inner: 'dz-embed-inner' },
+    cluster: { fi: 'fi-cluster', inner: 'dz-cluster-inner' },
+    barcode: { fi: 'fi-barcode', inner: 'dz-barcode-inner' },
+    async:   { fi: 'fi-async',   inner: 'dz-async-inner' },
+  };
+  const cfg   = configs[type];
+  const input = document.getElementById(cfg.fi);
+
+  // ── Multi-file preview (async tab) ──────────────────────────────────────
+  if (type === 'async') {
+    const files = [...input.files];
+    if (!files.length) return;
+    if (files.length === 1) {
+      // single file → show thumbnail like other tabs
+      const reader = new FileReader();
+      reader.onload = e => {
+        previewDataUrls.async = e.target.result;
+        setEl(cfg.inner,
+          `<img src="${e.target.result}" class="img-preview mb-1">
+           <p class="mb-0 small text-muted">${files[0].name} · ${(files[0].size/1024).toFixed(0)} KB</p>`);
+      };
+      reader.readAsDataURL(files[0]);
+    } else {
+      const totalKB = files.reduce((s, f) => s + f.size, 0) / 1024;
+      const sizeStr = totalKB >= 1024
+        ? `${(totalKB / 1024).toFixed(1)} MB`
+        : `${totalKB.toFixed(0)} KB`;
+      setEl(cfg.inner, `
+        <div class="fs-2 mb-1">🖼️×${files.length}</div>
+        <p class="mb-1 fw-semibold small">${files.length} Bilder ausgewählt · ${sizeStr}</p>
+        <div class="text-muted" style="font-size:.75rem;max-height:90px;overflow-y:auto;
+             text-align:left;padding:4px 8px;background:var(--bg-base);border-radius:4px;
+             border:1px solid var(--border)">
+          ${files.map(f => `<div>${f.name}</div>`).join('')}
+        </div>`);
+    }
+    return;
+  }
+
+  // ── Single-file preview (all other tabs) ────────────────────────────────
+  const f = input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    previewDataUrls[type] = e.target.result;
+    setEl(cfg.inner,
+      `<img src="${e.target.result}" class="img-preview mb-1">
+       <p class="mb-0 small text-muted">${f.name} · ${(f.size/1024).toFixed(0)} KB</p>`);
+  };
+  reader.readAsDataURL(f);
+}
+
+['embed','cluster','barcode'].forEach(t => {
+  setupDropZone(t, `fi-${t}`, `dz-${t}-inner`, `dz-${t}`);
+});
+setupDropZone('async', 'fi-async', 'dz-async-inner', 'dz-async', true);
+
+// ═══════════════════════════════════════ UPLOAD ACTIONS ══════════════════
+async function doEmbed() {
+  const f = document.getElementById('fi-embed').files[0];
+  if (!f) { alert('Bitte ein Bild auswählen.'); return; }
+  const cache = document.getElementById('embed-cache').checked;
+  const ttl   = document.getElementById('embed-ttl').value;
+  let url = `/faces/embed?cache=${cache}`;
+  if (ttl) url += `&ttl=${ttl}`;
+  const fd = new FormData(); fd.append('file', f);
+  setEl('embed-result', spinner());
+  try {
+    const { r, d } = await fetchJson(url, { method: 'POST', body: fd });
+    if (!r.ok) { setEl('embed-result', resultCard(`Fehler ${r.status}`, d, true)); return; }
+    setEl('embed-result', `
+      <div class="alert alert-success py-2 small mb-2">
+        <strong>${d.faces_found}</strong> Gesicht(er) erkannt · Modell: <code>${d.model}</code>
+      </div>
+      ${(d.faces||[]).map((face, i) => `
+        <div class="face-card mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong class="small">Gesicht ${i}</strong>
+            <span class="badge ${face.cached ? 'bg-success' : 'bg-secondary'}">${face.cached ? 'Gecacht' : 'Nicht gecacht'}</span>
+          </div>
+          <div class="small text-muted">ID: <code>${face.face_id || '–'}</code></div>
+          <div class="small text-muted">Konfidenz: ${face.face_confidence?.toFixed(4) ?? '–'} · Dim: ${face.embedding_dim}</div>
+          ${face.facial_area ? `<div class="small text-muted">Box: x=${face.facial_area.x} y=${face.facial_area.y} ${face.facial_area.w}×${face.facial_area.h}</div>` : ''}
+        </div>`).join('')}
+      <details class="mt-2"><summary class="text-muted small">Raw JSON</summary>
+        <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`);
+    drawFaceOverlay('embed-result', previewDataUrls['embed'], d.faces || []);
+    loadHealth();
+  } catch(e) { setEl('embed-result', resultCard('Netzwerkfehler', {error: e.message}, true)); }
+}
+
+async function doCluster() {
+  const f = document.getElementById('fi-cluster').files[0];
+  if (!f) { alert('Bitte ein Bild auswählen.'); return; }
+  const sim   = document.getElementById('cluster-sim').value;
+  const cache = document.getElementById('cluster-cache').checked;
+  const fd = new FormData(); fd.append('file', f);
+  setEl('cluster-result', spinner());
+  try {
+    const { r, d } = await fetchJson(`/faces/cluster?min_similarity=${sim}&cache=${cache}`, { method: 'POST', body: fd });
+    if (!r.ok) { setEl('cluster-result', resultCard(`Fehler ${r.status}`, d, true)); return; }
+    const colors = ['primary','success','warning','danger','info','purple'];
+    setEl('cluster-result', `
+      <div class="alert alert-success py-2 small mb-2">
+        <strong>${d.faces_found}</strong> Gesichter · <strong>${d.n_clusters}</strong> Cluster · <strong>${d.n_noise}</strong> Noise
+      </div>
+      <div class="face-card mb-2">
+        ${(d.faces||[]).map(face => `
+          <div class="d-flex justify-content-between border-bottom py-1 small">
+            <span class="text-muted">Gesicht ${face.face_index}</span>
+            <span class="badge ${face.cluster_id < 0 ? 'bg-secondary' : `bg-${colors[face.cluster_id % colors.length]}`}">
+              ${face.cluster_id < 0 ? 'Noise' : `Cluster ${face.cluster_id}`}
+            </span>
+          </div>`).join('')}
+      </div>
+      <details><summary class="text-muted small">Raw JSON</summary>
+        <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`);
+    drawFaceOverlay('cluster-result', previewDataUrls['cluster'], d.faces || [], true);
+  } catch(e) { setEl('cluster-result', resultCard('Netzwerkfehler', {error: e.message}, true)); }
+}
+
+async function doBarcode() {
+  const f = document.getElementById('fi-barcode').files[0];
+  if (!f) { alert('Bitte ein Bild auswählen.'); return; }
+  const fd = new FormData(); fd.append('file', f);
+  setEl('barcode-result', spinner());
+  try {
+    const { r, d } = await fetchJson('/barcodes/detect', { method: 'POST', body: fd });
+    if (!r.ok) { setEl('barcode-result', resultCard(`Fehler ${r.status}`, d, true)); return; }
+    const bcs = d.barcodes || [];
+    setEl('barcode-result', `
+      <div class="alert ${bcs.length ? 'alert-success' : 'alert-warning'} py-2 small mb-2">
+        ${bcs.length ? `<strong>${bcs.length}</strong> Barcode(s) gefunden` : 'Kein Barcode erkannt'}
+      </div>
+      ${bcs.map(bc => `
+        <div class="face-card mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong class="small text-info">${bc.symbology_friendly}</strong>
+            <small class="text-muted">Q: ${bc.quality}</small>
+          </div>
+          <code class="d-block">${bc.data}</code>
+          <small class="text-muted">Pos: (${bc.bounding_rect.left}, ${bc.bounding_rect.top}) · ${bc.bounding_rect.width}×${bc.bounding_rect.height}</small>
+        </div>`).join('')}
+      <details><summary class="text-muted small">Raw JSON</summary>
+        <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`);
+    if (bcs.length) drawBarcodeOverlay('barcode-result', previewDataUrls['barcode'], bcs);
+  } catch(e) { setEl('barcode-result', resultCard('Netzwerkfehler', {error: e.message}, true)); }
+}
+
+async function doEmbedAsync() {
+  const files = [...document.getElementById('fi-async').files];
+  if (!files.length) { alert('Bitte mindestens ein Bild auswählen.'); return; }
+
+  const cache       = document.getElementById('async-cache').checked;
+  const concurrency = Math.max(1, parseInt(document.getElementById('async-concurrency').value) || 3);
+
+  // ── State rows ────────────────────────────────────────────────────────────
+  const rows = files.map((f, i) => ({
+    idx: i, file: f,
+    status: 'pending',   // pending | submitting | ok | error
+    jobId: null,
+    queueDepth: null,
+    error: null,
+  }));
+
+  // ── Render helper ─────────────────────────────────────────────────────────
+  function renderTable() {
+    const done  = rows.filter(r => r.status === 'ok').length;
+    const errs  = rows.filter(r => r.status === 'error').length;
+    const total = rows.length;
+    const pct   = Math.round(((done + errs) / total) * 100);
+
+    setEl('async-result', `
+      <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between py-2">
+          <span class="small fw-semibold">⚡ ${total} Job(s) · ${done} eingereiht · ${errs} Fehler</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="progress flex-grow-1" style="width:120px;height:6px">
+              <div class="progress-bar ${errs ? 'bg-warning' : 'bg-success'}"
+                style="width:${pct}%"></div>
+            </div>
+            <small class="text-muted">${pct}%</small>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead class="table-dark">
+                <tr><th>#</th><th>Datei</th><th>Größe</th><th>Status</th><th>Job ID</th><th>Queue</th></tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => {
+                  const name = r.file.name.length > 34
+                    ? r.file.name.slice(0, 32) + '…'
+                    : r.file.name;
+                  const statusHtml =
+                    r.status === 'pending'    ? '<span class="badge bg-secondary">Warten</span>' :
+                    r.status === 'submitting' ? '<span class="badge bg-warning text-dark"><span class="spinner-border spinner-border-sm me-1" style="width:10px;height:10px"></span>Sende…</span>' :
+                    r.status === 'ok'         ? '<span class="badge bg-success">✓ Eingereiht</span>' :
+                    `<span class="badge bg-danger" title="${r.error}">✕ Fehler</span>`;
+                  const jobBtn = r.jobId
+                    ? `<button class="btn btn-xs btn-outline-secondary py-0 font-mono"
+                         onclick="showJob('${r.jobId}')">${r.jobId.slice(0, 13)}…</button>`
+                    : '<span class="text-muted">–</span>';
+                  return `<tr>
+                    <td class="text-muted small">${r.idx + 1}</td>
+                    <td class="small" title="${r.file.name}">${name}</td>
+                    <td class="small text-muted text-nowrap">${(r.file.size/1024).toFixed(0)} KB</td>
+                    <td>${statusHtml}</td>
+                    <td>${jobBtn}</td>
+                    <td class="small text-muted">${r.queueDepth != null ? r.queueDepth : '–'}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>`);
+  }
+
+  renderTable();
+
+  // ── Read a single file as base64 ──────────────────────────────────────────
+  function readAsB64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = e => resolve(e.target.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ── Submit one row ────────────────────────────────────────────────────────
+  async function submitRow(row) {
+    row.status = 'submitting';
+    renderTable();
+    try {
+      const b64 = await readAsB64(row.file);
+      const { r, d } = await fetchJson('/faces/embed/async', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_b64: b64, source_file: row.file.name, cache }),
+      });
+      if (!r.ok) {
+        row.status = 'error';
+        row.error  = d?.detail || d?.message || `HTTP ${r.status}`;
+      } else {
+        row.status     = 'ok';
+        row.jobId      = d.job_id;
+        row.queueDepth = d.queue_depth;
+      }
+    } catch (e) {
+      row.status = 'error';
+      row.error  = e.message.slice(0, 80);
+    }
+    renderTable();
+  }
+
+  // ── Controlled concurrency pool ───────────────────────────────────────────
+  const queue = [...rows];
+  async function worker() {
+    while (queue.length) {
+      await submitRow(queue.shift());
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, rows.length) }, worker));
+
+  loadHealth();
+  loadJobs();
+}
+
+// ─── Canvas polyfill: roundRect is available in Chrome 99+/Firefox 112+
+//     For older hosts add a simple rect fallback.
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h /*, r */) {
+    this.rect(x, y, w, h);
+  };
+}
+
+// ═══════════════════════════════════════ VISUAL DEBUGGER ═════════════════
+
+/**
+ * Draw face bounding-box overlay on a canvas appended to `containerId`.
+ * @param {string}  containerId   - DOM id of the result container
+ * @param {string}  imgDataUrl    - data-URL of the original image
+ * @param {Array}   faces         - array of face objects from the API
+ * @param {boolean} clusterMode   - if true, colour by cluster_id instead of index
+ */
+function drawFaceOverlay(containerId, imgDataUrl, faces, clusterMode = false) {
+  if (!imgDataUrl || !faces.length) return;
+  const withArea = faces.filter(f => f.facial_area);
+  if (!withArea.length) return;
+
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // ── Build wrapper ────────────────────────────────────────────────────────
+  const uid = `dbg-${containerId}`;
+  const wrap = document.createElement('div');
+  wrap.className = 'debug-container mt-3';
+  wrap.innerHTML = `
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="small fw-semibold" style="color:var(--muted)">🔍 Debug-Overlay</span>
+      <button class="btn btn-xs btn-outline-secondary py-0 ms-auto"
+        onclick="this.closest('.debug-container').remove()">✕</button>
+    </div>
+    <div class="debug-wrap">
+      <canvas id="${uid}-canvas"></canvas>
+    </div>
+    <div id="${uid}-legend" class="mt-2"></div>`;
+  container.appendChild(wrap);
+
+  const canvas = document.getElementById(`${uid}-canvas`);
+  const ctx    = canvas.getContext('2d');
+
+  const img = new Image();
+  img.onload = () => {
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+
+    // Adaptive line/font size so boxes look good on any resolution
+    const scale    = img.naturalWidth / 800;
+    const lw       = Math.max(1.5, 2.5 * scale);
+    const fontSize = Math.max(11, Math.round(14 * scale));
+    ctx.font       = `bold ${fontSize}px sans-serif`;
+
+    withArea.forEach((face, i) => {
+      const { x, y, w, h } = face.facial_area;
+      const colorIdx = clusterMode
+        ? (face.cluster_id != null && face.cluster_id >= 0 ? face.cluster_id : GROUP_COLORS.length - 1)
+        : i;
+      const color = GROUP_COLORS[colorIdx % GROUP_COLORS.length];
+
+      // ── Bounding box ────────────────────────────────────────────────────
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = lw;
+      ctx.strokeRect(x, y, w, h);
+
+      // ── Label text ──────────────────────────────────────────────────────
+      const faceIdx  = face.face_index ?? i;
+      const confPct  = face.face_confidence != null
+        ? `${(face.face_confidence * 100).toFixed(1)}%` : '';
+      const clustTxt = clusterMode && face.cluster_id != null
+        ? (face.cluster_id < 0 ? ' · Noise' : ` · C${face.cluster_id}`) : '';
+      const label    = `#${faceIdx}  ${confPct}${clustTxt}`;
+
+      const tw = ctx.measureText(label).width;
+      const th = fontSize + 6;
+      const tx = x;
+      const ty = y > th + 2 ? y - th : y + h;      // flip below if near top
+
+      // pill background
+      ctx.fillStyle = color + 'dd';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw + 10, th, 3);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, tx + 5, ty + th - 4);
+    });
+
+    // ── Legend ───────────────────────────────────────────────────────────
+    const legendEl = document.getElementById(`${uid}-legend`);
+    if (legendEl) {
+      legendEl.innerHTML = withArea.map((face, i) => {
+        const colorIdx = clusterMode
+          ? (face.cluster_id != null && face.cluster_id >= 0 ? face.cluster_id : GROUP_COLORS.length - 1)
+          : i;
+        const color   = GROUP_COLORS[colorIdx % GROUP_COLORS.length];
+        const faceIdx = face.face_index ?? i;
+        const conf    = face.face_confidence != null
+          ? `${(face.face_confidence * 100).toFixed(1)}%` : '–';
+        const clustBadge = clusterMode && face.cluster_id != null
+          ? `<span class="badge ms-1" style="background:${color}33;color:${color};border:1px solid ${color}66">${face.cluster_id < 0 ? 'Noise' : `Cluster ${face.cluster_id}`}</span>`
+          : '';
+        const idStr = face.face_id
+          ? `<code class="ms-2">${face.face_id.slice(0, 8)}…</code>` : '';
+        return `<div class="face-legend-row">
+          <span class="face-legend-dot" style="background:${color}"></span>
+          <div class="small flex-grow-1">
+            <strong>#${faceIdx}</strong>
+            <span class="text-muted ms-2">Konf: ${conf}</span>
+            ${clustBadge}${idStr}
+          </div>
+          <small class="text-muted font-mono">${face.facial_area
+            ? `${face.facial_area.w}×${face.facial_area.h} @ (${face.facial_area.x},${face.facial_area.y})` : ''}</small>
+        </div>`;
+      }).join('');
+    }
+  };
+  img.src = imgDataUrl;
+}
+
+/**
+ * Draw barcode bounding-box overlay on a canvas appended to `containerId`.
+ */
+function drawBarcodeOverlay(containerId, imgDataUrl, barcodes) {
+  if (!imgDataUrl || !barcodes.length) return;
+
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const uid  = `dbg-${containerId}`;
+  const wrap = document.createElement('div');
+  wrap.className = 'debug-container mt-3';
+  wrap.innerHTML = `
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <span class="small fw-semibold" style="color:var(--muted)">🔍 Debug-Overlay</span>
+      <button class="btn btn-xs btn-outline-secondary py-0 ms-auto"
+        onclick="this.closest('.debug-container').remove()">✕</button>
+    </div>
+    <div class="debug-wrap">
+      <canvas id="${uid}-canvas"></canvas>
+    </div>
+    <div id="${uid}-legend" class="mt-2"></div>`;
+  container.appendChild(wrap);
+
+  const canvas = document.getElementById(`${uid}-canvas`);
+  const ctx    = canvas.getContext('2d');
+
+  const img = new Image();
+  img.onload = () => {
+    canvas.width  = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+
+    const scale    = img.naturalWidth / 800;
+    const lw       = Math.max(1.5, 2.5 * scale);
+    const fontSize = Math.max(11, Math.round(13 * scale));
+    ctx.font       = `bold ${fontSize}px monospace`;
+
+    barcodes.forEach((bc, i) => {
+      const { left, top, width, height } = bc.bounding_rect;
+      const color = GROUP_COLORS[i % GROUP_COLORS.length];
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = lw;
+      ctx.strokeRect(left, top, width, height);
+
+      const label = bc.data.length > 30 ? bc.data.slice(0, 29) + '…' : bc.data;
+      const tw    = ctx.measureText(label).width;
+      const th    = fontSize + 6;
+      const tx    = left;
+      const ty    = top > th + 2 ? top - th : top + height;
+
+      ctx.fillStyle = color + 'dd';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw + 10, th, 3);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, tx + 5, ty + th - 4);
+    });
+
+    const legendEl = document.getElementById(`${uid}-legend`);
+    if (legendEl) {
+      legendEl.innerHTML = barcodes.map((bc, i) => {
+        const color = GROUP_COLORS[i % GROUP_COLORS.length];
+        const { left, top, width, height } = bc.bounding_rect;
+        return `<div class="face-legend-row">
+          <span class="face-legend-dot" style="background:${color}"></span>
+          <div class="small flex-grow-1">
+            <strong class="me-2">${bc.symbology_friendly}</strong>
+            <code>${bc.data}</code>
+            <span class="text-muted ms-2">Q: ${bc.quality}</span>
+          </div>
+          <small class="text-muted font-mono">${width}×${height} @ (${left},${top})</small>
+        </div>`;
+      }).join('');
+    }
+  };
+  img.src = imgDataUrl;
+}
+
+// ═══════════════════════════════════════ TOOLS ═══════════════════════════
+
+// ── Shared: populate <datalist> from cache ────────────────────────────────
+async function populateFaceIdDatalist() {
+  try {
+    const r = await fetch('/faces/cache?limit=500&offset=0');
+    const d = await r.json();
+    document.getElementById('face-id-datalist').innerHTML =
+      d.faces.map(f =>
+        `<option value="${f.face_id}">${f.face_id.slice(0,13)}… — ${f.source_file || 'unbekannt'} · ${f.model_name}</option>`
+      ).join('');
+  } catch(_) {}
+}
+
+// ── Similarity colour helper (green→yellow→red) ───────────────────────────
+function simColor(sim) {
+  if (sim >= 0.8) return '#22c55e';
+  if (sim >= 0.6) return '#f59e0b';
+  if (sim >= 0.4) return '#f97316';
+  return '#ef4444';
+}
+
+// ── Similarity bar HTML ───────────────────────────────────────────────────
+function simBar(sim) {
+  const pct   = (sim * 100).toFixed(1);
+  const color = simColor(sim);
+  return `<div class="d-flex align-items-center gap-2">
+    <div class="sim-bar-wrap flex-grow-1">
+      <div class="sim-bar" style="width:${pct}%;background:${color}"></div>
+    </div>
+    <span class="sim-score small" style="color:${color};min-width:42px;text-align:right">${pct}%</span>
+  </div>`;
+}
+
+// ─── FACE SEARCH ──────────────────────────────────────────────────────────
+async function doFaceSearch() {
+  const faceId  = document.getElementById('search-face-id').value.trim();
+  const topK    = parseInt(document.getElementById('search-topk').value);
+  const minSim  = parseFloat(document.getElementById('search-minsim').value);
+  const exSelf  = document.getElementById('search-exclude-self').checked;
+  if (!faceId) { alert('Bitte eine Face ID eingeben.'); return; }
+
+  setEl('search-result', spinner());
+  try {
+    const { r, d } = await fetchJson('/faces/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ face_id: faceId, top_k: topK, min_similarity: minSim, exclude_self: exSelf }),
+    });
+    if (!r.ok) { setEl('search-result', resultCard(`Fehler ${r.status}`, d, true)); return; }
+
+    const results = d.results || [];
+    const thr = d.threshold ?? '–';
+
+    setEl('search-result', `
+      <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between py-2">
+          <span class="small fw-semibold">🔍 Suchergebnisse</span>
+          <div class="d-flex gap-2">
+            <span class="badge bg-secondary">${d.searched} durchsucht</span>
+            <span class="badge bg-primary">${results.length} Treffer</span>
+            <span class="badge bg-secondary">Modell: ${d.model}</span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          ${results.length === 0
+            ? `<div class="text-center py-4 text-muted small">Keine Treffer über Min.-Ähnlichkeit ${(minSim*100).toFixed(0)}%</div>`
+            : `<div class="table-responsive">
+               <table class="table table-sm mb-0">
+                 <thead class="table-dark">
+                   <tr><th>#</th><th>Face ID</th><th>Ähnlichkeit</th><th>Quelldatei</th><th>Konf.</th><th>Qualität</th><th>Verifiziert?</th></tr>
+                 </thead>
+                 <tbody>
+                   ${results.map((res, i) => {
+                     const verified = (1 - res.similarity) < thr;
+                     return `<tr class="search-result-row" onclick="prefillCompare('${res.face_id}')">
+                       <td class="text-muted small">${i + 1}</td>
+                       <td class="font-mono small" title="${res.face_id}">${res.face_id.slice(0,13)}…</td>
+                       <td style="min-width:160px">${simBar(res.similarity)}</td>
+                       <td><small class="text-muted">${res.source_file || '–'}</small></td>
+                       <td><small class="text-muted">${res.face_confidence != null ? (res.face_confidence*100).toFixed(1)+'%' : '–'}</small></td>
+                       <td>${fmtQuality(res.face_quality_score ?? null)}</td>
+                       <td>${verified
+                         ? '<span class="badge bg-success">✓ Ja</span>'
+                         : '<span class="badge bg-secondary">✗ Nein</span>'}</td>
+                     </tr>`;
+                   }).join('')}
+                 </tbody>
+               </table>
+               </div>
+               <div class="px-3 py-2">
+                 <small class="text-muted">Threshold (${d.model}): <code>${thr}</code> &nbsp;·&nbsp;
+                   Auf Zeile klicken → Face Compare vorausfüllen</small>
+               </div>`}
+        </div>
+      </div>
+      <details class="mt-2"><summary class="text-muted small">Raw JSON</summary>
+        <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`);
+  } catch(e) { setEl('search-result', resultCard('Netzwerkfehler', { error: e.message }, true)); }
+}
+
+// prefill compare tab from search result click
+function prefillCompare(faceId) {
+  const a = document.getElementById('compare-face-a');
+  const b = document.getElementById('compare-face-b');
+  if (!a.value) { a.value = faceId; }
+  else if (!b.value) { b.value = faceId; }
+  else { b.value = faceId; }
+  // switch to compare sub-tab
+  bootstrap.Tab.getOrCreateInstance(
+    document.querySelector('[data-bs-target="#tool-compare"]')
+  ).show();
+}
+
+// ─── FACE COMPARE ─────────────────────────────────────────────────────────
+function swapCompareIds() {
+  const a = document.getElementById('compare-face-a');
+  const b = document.getElementById('compare-face-b');
+  [a.value, b.value] = [b.value, a.value];
+}
+
+async function doFaceCompare() {
+  const idA = document.getElementById('compare-face-a').value.trim();
+  const idB = document.getElementById('compare-face-b').value.trim();
+  if (!idA || !idB) { alert('Bitte beide Face IDs eingeben.'); return; }
+
+  setEl('compare-result', spinner());
+  try {
+    const { r, d } = await fetchJson('/faces/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ face_id_a: idA, face_id_b: idB }),
+    });
+    if (!r.ok) { setEl('compare-result', resultCard(`Fehler ${r.status}`, d, true)); return; }
+
+    const sim     = d.similarity;
+    const dist    = d.distance;
+    const color   = simColor(sim);
+    const pct     = (sim * 100).toFixed(2);
+    const verified = d.verified;
+
+    setEl('compare-result', `
+      <div class="card">
+        <div class="card-header py-2 small fw-semibold">⚖️ Vergleichsergebnis · Modell: <code>${d.model}</code></div>
+        <div class="card-body">
+
+          <!-- IDs row -->
+          <div class="row g-2 mb-3 text-center">
+            <div class="col-5">
+              <div class="face-card p-2">
+                <div class="text-muted small mb-1">Face A</div>
+                <code class="small d-block" style="word-break:break-all">${idA}</code>
+              </div>
+            </div>
+            <div class="col-2 d-flex align-items-center justify-content-center">
+              <span style="font-size:1.5rem">↔</span>
+            </div>
+            <div class="col-5">
+              <div class="face-card p-2">
+                <div class="text-muted small mb-1">Face B</div>
+                <code class="small d-block" style="word-break:break-all">${idB}</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- Score -->
+          <div class="text-center mb-3">
+            <div style="font-size:3rem;font-weight:800;color:${color};line-height:1">${pct}%</div>
+            <div class="text-muted small mt-1">Cosine-Ähnlichkeit</div>
+          </div>
+
+          <!-- Bar -->
+          <div class="mb-3 px-2">
+            <div class="sim-bar-wrap" style="height:14px">
+              <div class="sim-bar" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <small class="text-muted">0%</small>
+              <small style="color:${color}">Distanz: ${dist.toFixed(4)}</small>
+              <small class="text-muted">100%</small>
+            </div>
+          </div>
+
+          <!-- Verdict -->
+          <div class="text-center">
+            <span class="verified-badge ${verified ? 'bg-success text-white' : 'bg-secondary text-white'}">
+              ${verified ? '✅ Gleiche Person' : '❌ Verschiedene Personen'}
+            </span>
+            <div class="text-muted small mt-2">Threshold (${d.model}): Distanz &lt; <code>${d.threshold}</code></div>
+          </div>
+        </div>
+      </div>
+      <details class="mt-2"><summary class="text-muted small">Raw JSON</summary>
+        <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`);
+  } catch(e) { setEl('compare-result', resultCard('Netzwerkfehler', { error: e.message }, true)); }
+}
+
+// ─── FACE GROUP (standalone tool) ─────────────────────────────────────────
+function updateToolGroupOptions() {
+  const m = document.getElementById('tool-grp-method').value;
+  document.getElementById('tool-opt-connected').classList.toggle('d-none',     m !== 'connected');
+  document.getElementById('tool-opt-hdbscan').classList.toggle('d-none',       m !== 'hdbscan');
+  document.getElementById('tool-opt-agglomerative').classList.toggle('d-none', m !== 'agglomerative');
+}
+
+function updateGroupIdCount() {
+  const ids = parseGroupFaceIds();
+  const el  = document.getElementById('group-ids-count');
+  el.textContent = ids.length ? `(${ids.length} IDs)` : '';
+  el.style.color = ids.length < 2 ? '#ef4444' : '#22c55e';
+}
+
+function parseGroupFaceIds() {
+  return document.getElementById('group-face-ids').value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+}
+
+async function loadGroupFaceIds() {
+  try {
+    const r = await fetch('/faces/cache?limit=2000&offset=0');
+    const d = await r.json();
+    document.getElementById('group-face-ids').value = d.faces.map(f => f.face_id).join('\n');
+    updateGroupIdCount();
+  } catch(e) { alert('Cache konnte nicht geladen werden: ' + e.message); }
+}
+
+async function doFaceGroup() {
+  const faceIds = parseGroupFaceIds();
+  if (faceIds.length < 2) { alert('Mindestens 2 Face IDs eingeben.'); return; }
+
+  const method  = document.getElementById('tool-grp-method').value;
+  const persist = document.getElementById('tool-grp-persist').checked;
+  const body    = { face_ids: faceIds, method, persist };
+  if (method === 'connected') {
+    body.similarity_threshold = parseFloat(document.getElementById('tool-grp-sim-threshold').value) || 0.65;
+  } else if (method === 'hdbscan') {
+    body.min_cluster_size = parseInt(document.getElementById('tool-grp-min-cluster').value) || 2;
+  } else {
+    body.distance_threshold = parseFloat(document.getElementById('tool-grp-dist').value) || 0.45;
+  }
+
+  const el = document.getElementById('tool-group-result');
+  el.innerHTML = `<div class="text-center py-4">
+    <div class="spinner-border text-primary"></div>
+    <div class="text-muted mt-2 small">Gruppiere ${faceIds.length} Gesichter…</div>
+  </div>`;
+
+  try {
+    const { r, d } = await fetchJson('/faces/group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) { el.innerHTML = resultCard(`Fehler ${r.status}`, d, true); return; }
+    renderToolGroupResult(el, d);
+    if (d.session_id) loadSessions();
+  } catch(e) {
+    el.innerHTML = resultCard('Netzwerkfehler', { error: e.message }, true);
+  }
+}
+
+function renderToolGroupResult(el, d) {
+  const groups   = d.groups        || [];
+  const noiseIds = d.noise_face_ids || [];
+
+  const groupHtml = groups.map((faceIds, idx) => {
+    const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+    const rows  = faceIds.map(fid => `
+      <tr>
+        <td><span class="face-legend-dot me-1" style="background:${color}"></span></td>
+        <td class="font-mono small">${fid}</td>
+        <td>
+          <button class="btn btn-xs btn-outline-secondary py-0 tool-grp-search" data-fid="${fid}">🔍</button>
+          <button class="btn btn-xs btn-outline-secondary py-0 ms-1 tool-grp-compare" data-fid="${fid}">⚖️</button>
+        </td>
+      </tr>`).join('');
+    return `
+      <div class="group-card mb-2" style="border-color:${color}">
+        <div class="group-title" style="color:${color}">
+          <span style="background:${color};width:10px;height:10px;border-radius:50%;display:inline-block"></span>
+          Gruppe ${idx + 1}
+          <span class="badge ms-1" style="background:${color}22;color:${color};border:1px solid ${color}44">
+            ${faceIds.length} Gesicht${faceIds.length !== 1 ? 'er' : ''}
+          </span>
+        </div>
+        <table class="table table-sm mb-0" style="background:transparent">
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+
+  const noiseHtml = noiseIds.length ? `
+    <div class="noise-section group-card" style="border-color:#4b5568">
+      <div class="group-title" style="color:#94a3b8">
+        <span style="background:#4b5568;width:10px;height:10px;border-radius:50%;display:inline-block"></span>
+        Noise / Nicht zugeordnet
+        <span class="badge bg-secondary ms-1">${noiseIds.length}</span>
+      </div>
+      <div class="d-flex flex-wrap gap-1 mt-1">
+        ${noiseIds.map(fid => `<code class="small" style="color:var(--muted)">${fid.slice(0,13)}…</code>`).join('')}
+      </div>
+    </div>` : '';
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between py-2">
+        <span class="small fw-semibold">🔗 Gruppierergebnis</span>
+        <div class="d-flex gap-2 align-items-center">
+          <span class="badge bg-primary">${groups.length} Gruppen</span>
+          ${noiseIds.length ? `<span class="badge bg-secondary">${noiseIds.length} Noise</span>` : ''}
+          <span class="badge bg-secondary">${d.method}</span>
+          ${d.session_id
+            ? `<span class="badge bg-success" title="${d.session_id}">💾 Gespeichert</span>` : ''}
+        </div>
+      </div>
+      <div class="card-body">
+        ${groups.length === 0
+          ? '<div class="text-muted text-center py-3">Keine Gruppen — alle Noise. Threshold / min_cluster_size anpassen.</div>'
+          : groupHtml}
+        ${noiseHtml}
+      </div>
+    </div>
+    <details class="mt-2"><summary class="text-muted small">Raw JSON</summary>
+      <pre class="json mt-1">${JSON.stringify(d, null, 2)}</pre></details>`;
+
+  // Attach button handlers after DOM is written — avoids onclick UUID escaping issues
+  el.querySelectorAll('.tool-grp-search').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fid = btn.dataset.fid;
+      document.getElementById('search-face-id').value = fid;
+      bootstrap.Tab.getOrCreateInstance(document.querySelector('[data-bs-target="#tool-search"]')).show();
+      doFaceSearch();
+    });
+  });
+  el.querySelectorAll('.tool-grp-compare').forEach(btn => {
+    btn.addEventListener('click', () => prefillCompare(btn.dataset.fid));
+  });
+}
+
+// ─── Load datalist when Tools tab is opened ───────────────────────────────
+document.getElementById('main-tabs').addEventListener('shown.bs.tab', e => {
+  if (e.target.dataset.bsTarget === '#tab-tools') populateFaceIdDatalist();
+});
+
+// ═══════════════════════════════════════ FACE CACHE ══════════════════════
+let cacheOffset = 0;
+const CACHE_LIMIT = 50;
+
+// face_id → full face object
+const selectedFaces = new Map();
+
+function updateSelectionBar() {
+  const n = selectedFaces.size;
+  const bar = document.getElementById('sel-bar');
+  bar.classList.toggle('d-none', n === 0);
+  document.getElementById('sel-count-label').textContent = `${n} ausgewählt`;
+  // sync page-checkbox state
+  const rows = document.querySelectorAll('#cache-tbody tr');
+  const pageIds = [...rows].map(r => r.dataset.faceId).filter(Boolean);
+  const allChecked = pageIds.length > 0 && pageIds.every(id => selectedFaces.has(id));
+  document.getElementById('chk-all-page').checked = allChecked;
+  document.getElementById('chk-all-page').indeterminate = !allChecked && pageIds.some(id => selectedFaces.has(id));
+  // highlight rows
+  rows.forEach(r => r.classList.toggle('selected', selectedFaces.has(r.dataset.faceId)));
+}
+
+function toggleFace(faceId, faceData, checked) {
+  if (checked) selectedFaces.set(faceId, faceData);
+  else         selectedFaces.delete(faceId);
+  updateSelectionBar();
+}
+
+function togglePageSelection(checked) {
+  document.querySelectorAll('#cache-tbody tr').forEach(r => {
+    const id = r.dataset.faceId;
+    if (!id) return;
+    const data = JSON.parse(r.dataset.faceData || '{}');
+    if (checked) selectedFaces.set(id, data);
+    else         selectedFaces.delete(id);
+    r.querySelector('input[type=checkbox]').checked = checked;
+  });
+  updateSelectionBar();
+}
+
+function clearSelection() {
+  selectedFaces.clear();
+  document.querySelectorAll('#cache-tbody input[type=checkbox]').forEach(c => c.checked = false);
+  document.getElementById('chk-all-page').checked = false;
+  document.getElementById('chk-all-page').indeterminate = false;
+  updateSelectionBar();
+}
+
+function selectCurrentPage() {
+  togglePageSelection(true);
+  document.getElementById('chk-all-page').checked = true;
+}
+
+async function selectAll() {
+  // load every face (up to 2000) and add to selection
+  const r = await fetch('/faces/cache?limit=2000&offset=0');
+  const d = await r.json();
+  d.faces.forEach(f => selectedFaces.set(f.face_id, f));
+  // re-render current page so checkboxes reflect state
+  await loadFaceCache(cacheOffset);
+  updateSelectionBar();
+}
+
+async function loadFaceCache(offset = 0) {
+  cacheOffset = offset;
+  const r = await fetch(`/faces/cache?limit=${CACHE_LIMIT}&offset=${offset}`);
+  const d = await r.json();
+  document.getElementById('cache-info').textContent =
+    `${d.count} Einträge · Seite ${Math.floor(offset/CACHE_LIMIT)+1}`;
+  document.getElementById('cache-badge').textContent = d.count;
+
+  document.getElementById('cache-tbody').innerHTML =
+    d.faces.map(f => {
+      const sel = selectedFaces.has(f.face_id);
+      const safe = JSON.stringify(f).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+      return `<tr data-face-id="${f.face_id}" data-face-data="${safe}" class="${sel ? 'selected' : ''}">
+        <td>
+          <input type="checkbox" class="form-check-input" ${sel ? 'checked' : ''}
+            onchange="toggleFace('${f.face_id}', JSON.parse(this.closest('tr').dataset.faceData), this.checked)">
+        </td>
+        <td class="font-mono small">${f.face_id}</td>
+        <td><small>${f.source_file || '–'}</small></td>
+        <td><code class="small">${f.model_name}</code></td>
+        <td>${f.embedding_dim}</td>
+        <td>${f.face_confidence != null ? f.face_confidence.toFixed(3) : '–'}</td>
+        <td>${fmtQuality(f.face_quality_score)}</td>
+        <td>${fmtExp(f.expires_in_seconds)}</td>
+        <td>
+          <button class="btn btn-xs btn-outline-danger py-0 px-1"
+            onclick="deleteFace('${f.face_id}')">✕</button>
+        </td>
+      </tr>`;
+    }).join('') ||
+    `<tr><td colspan="8" class="text-muted text-center py-4">Cache ist leer</td></tr>`;
+
+  const pag = document.getElementById('cache-pag');
+  pag.innerHTML = `
+    <button class="btn btn-sm btn-outline-secondary"
+      ${offset === 0 ? 'disabled' : ''} onclick="loadFaceCache(${offset - CACHE_LIMIT})">← Zurück</button>
+    <small class="text-muted align-self-center">
+      ${offset + 1}–${offset + d.faces.length} von ${d.count}
+    </small>
+    <button class="btn btn-sm btn-outline-secondary"
+      ${d.faces.length < CACHE_LIMIT ? 'disabled' : ''} onclick="loadFaceCache(${offset + CACHE_LIMIT})">Weiter →</button>`;
+
+  updateSelectionBar();
+}
+
+async function deleteFace(faceId) {
+  if (!confirm(`Face ID löschen?\n${faceId}`)) return;
+  selectedFaces.delete(faceId);
+  await fetch(`/faces/cache/${faceId}`, { method: 'DELETE' });
+  loadFaceCache(cacheOffset);
+}
+
+// ─── Grouping options visibility ──────────────────────────────────────────────
+function updateGroupOptions() {
+  const m = document.getElementById('grp-method').value;
+  document.getElementById('opt-connected').classList.toggle('d-none',     m !== 'connected');
+  document.getElementById('opt-hdbscan').classList.toggle('d-none',       m !== 'hdbscan');
+  document.getElementById('opt-agglomerative').classList.toggle('d-none', m !== 'agglomerative');
+}
+
+// ─── Run grouping ─────────────────────────────────────────────────────────────
+const GROUP_COLORS = [
+  '#3b82f6','#22c55e','#f59e0b','#ec4899',
+  '#a855f7','#06b6d4','#f97316','#14b8a6',
+  '#ef4444','#84cc16','#e879f9','#fb923c',
+];
+
+async function runGrouping() {
+  if (selectedFaces.size < 2) {
+    alert('Bitte mindestens 2 Gesichter auswählen.');
+    return;
+  }
+
+  const method  = document.getElementById('grp-method').value;
+  const persist = document.getElementById('grp-persist').checked;
+
+  const body = {
+    face_ids: [...selectedFaces.keys()],
+    method,
+    persist,
+  };
+
+  if (method === 'connected') {
+    body.similarity_threshold = parseFloat(document.getElementById('grp-sim-threshold').value) || 0.65;
+  } else if (method === 'hdbscan') {
+    body.min_cluster_size = parseInt(document.getElementById('grp-min-cluster').value) || 2;
+  } else {
+    body.distance_threshold = parseFloat(document.getElementById('grp-dist').value) || 0.45;
+  }
+
+  const el = document.getElementById('grouping-result');
+  el.innerHTML = `<div class="text-center py-4">
+    <div class="spinner-border text-primary"></div>
+    <div class="text-muted mt-2 small">Gruppiere ${selectedFaces.size} Gesichter…</div>
+  </div>`;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const { r, d } = await fetchJson('/faces/group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) { el.innerHTML = resultCard(`Fehler ${r.status}`, d, true); return; }
+    renderGroupResult(d);
+    if (d.session_id) loadSessions();
+  } catch(e) {
+    el.innerHTML = resultCard('Netzwerkfehler', { error: e.message }, true);
+  }
+}
+
+// ═══════════════════════════════════════ GROUPING BOARD ══════════════════
+//
+// State: _board is the live data model for the drag-drop grouping board.
+// Each lane = { id, name, color, faceIds: Set }
+// The noise pool is a special lane with id='__noise__'.
+//
+let _board = null;          // { lanes: [...], method, session_id }
+let _boardDragFid  = null;  // face_id currently being dragged
+let _boardDragSrc  = null;  // source lane id
+
+function renderGroupResult(d) {
+  const groups   = d.groups        || [];
+  const noiseIds = d.noise_face_ids || [];
+
+  // Build the board state from the API result
+  _board = {
+    method:     d.method,
+    session_id: d.session_id,
+    lanes: groups.map((faceIds, idx) => ({
+      id:      `lane-${idx}`,
+      name:    `Gruppe ${idx + 1}`,
+      color:   GROUP_COLORS[idx % GROUP_COLORS.length],
+      faceIds: new Set(faceIds),
+    })),
+    noise: new Set(noiseIds),
+  };
+
+  _renderBoard(d);
+}
+
+function _renderBoard(meta = {}) {
+  const el = document.getElementById('grouping-result');
+
+  el.innerHTML = `
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <span>🔗 Gruppierungs-Board</span>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <span class="badge bg-primary" id="board-grp-count">${_board.lanes.length} Gruppen</span>
+          ${_board.noise.size ? `<span class="badge bg-secondary" id="board-noise-count">${_board.noise.size} Noise</span>` : '<span class="badge bg-secondary" id="board-noise-count" style="display:none">0 Noise</span>'}
+          ${meta.method ? `<span class="badge bg-secondary">${meta.method}</span>` : ''}
+          ${meta.session_id ? `<span class="badge bg-success" title="${meta.session_id}">💾 Session</span>` : ''}
+          <button class="btn btn-xs btn-outline-secondary py-0" id="board-close-btn">✕</button>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <!-- Board toolbar -->
+        <div class="grp-board-toolbar">
+          <button class="btn btn-sm btn-outline-primary" id="board-add-lane-btn">＋ Neue Gruppe</button>
+          <label class="btn btn-sm btn-outline-secondary mb-0" title="Foto hochladen — Gesicht wird erkannt und kann dann in eine Gruppe gezogen werden">
+            📷 Foto hochladen
+            <input type="file" accept="image/*" class="d-none" id="board-upload-input">
+          </label>
+          <span class="text-muted small" id="board-upload-status"></span>
+        </div>
+
+        <!-- Group lanes -->
+        <div class="grp-board" id="grp-board-lanes"></div>
+
+        <!-- Noise / unassigned pool -->
+        <div class="grp-noise-pool mt-3" id="grp-noise-pool">
+          <div class="grp-lane-header">
+            <span class="grp-lane-dot" style="background:#4b5568"></span>
+            <span style="color:#94a3b8;font-weight:600">Nicht zugeordnet</span>
+            <span class="badge bg-secondary ms-1" id="noise-pool-count">${_board.noise.size}</span>
+          </div>
+          <div class="grp-lane-chips" id="grp-noise-chips"></div>
+          ${_board.noise.size === 0 ? '<div class="grp-lane-drop-hint">Chips hierher ziehen zum Entgruppieren</div>' : ''}
+        </div>
+
+      </div>
+    </div>`;
+
+  // Wire static buttons
+  document.getElementById('board-close-btn').addEventListener('click', () => {
+    document.getElementById('grouping-result').innerHTML = '';
+    _board = null;
+  });
+  document.getElementById('board-add-lane-btn').addEventListener('click', () => _boardAddLane());
+  document.getElementById('board-upload-input').addEventListener('change', e => {
+    if (e.target.files[0]) _boardUploadPhoto(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  // Render all lanes
+  _board.lanes.forEach(lane => _renderLane(lane));
+
+  // Render noise chips
+  _renderNoisePool();
+
+  // Make noise pool a drop target
+  _makeLaneDropTarget(document.getElementById('grp-noise-pool'), '__noise__');
+}
+
+function _boardAddLane(name = null, faceIds = []) {
+  const idx   = _board.lanes.length;
+  const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+  const lane  = { id: `lane-${Date.now()}`, name: name || `Gruppe ${idx + 1}`, color, faceIds: new Set(faceIds) };
+  _board.lanes.push(lane);
+  _renderLane(lane);
+  _boardUpdateCounts();
+}
+
+function _renderLane(lane) {
+  const container = document.getElementById('grp-board-lanes');
+  let laneEl = document.getElementById(lane.id);
+  const isNew = !laneEl;
+
+  if (isNew) {
+    laneEl = document.createElement('div');
+    laneEl.className = 'grp-lane';
+    laneEl.id = lane.id;
+    container.appendChild(laneEl);
+  }
+
+  laneEl.style.borderColor = lane.color;
+  laneEl.innerHTML = `
+    <div class="grp-lane-header" style="color:${lane.color}">
+      <span class="grp-lane-dot" style="background:${lane.color}"></span>
+      <input class="grp-lane-name" value="${lane.name}" style="color:${lane.color}" title="Namen bearbeiten">
+      <span class="badge ms-1" style="background:${lane.color}22;color:${lane.color};border:1px solid ${lane.color}44" data-count-lane="${lane.id}">
+        ${lane.faceIds.size}
+      </span>
+      <button class="btn btn-xs btn-outline-secondary ms-auto py-0" data-del-lane="${lane.id}" title="Gruppe löschen — Chips gehen in Noise">✕</button>
+    </div>
+    <div class="grp-lane-chips" id="chips-${lane.id}"></div>
+    ${lane.faceIds.size === 0 ? '<div class="grp-lane-drop-hint" id="hint-'+lane.id+'">Chips hierher ziehen</div>' : ''}
+    <label class="grp-lane-upload" title="Foto hochladen — wird direkt in diese Gruppe eingesetzt">
+      📷 Foto hierher
+      <input type="file" accept="image/*" class="d-none" data-upload-lane="${lane.id}">
+    </label>`;
+
+  // Name edit
+  laneEl.querySelector('.grp-lane-name').addEventListener('input', e => { lane.name = e.target.value; });
+
+  // Delete lane
+  laneEl.querySelector(`[data-del-lane]`).addEventListener('click', () => _boardDeleteLane(lane.id));
+
+  // Per-lane upload
+  laneEl.querySelector(`[data-upload-lane]`).addEventListener('change', e => {
+    if (e.target.files[0]) _boardUploadPhoto(e.target.files[0], lane.id);
+    e.target.value = '';
+  });
+
+  // Render chips inside
+  const chipsEl = document.getElementById(`chips-${lane.id}`);
+  chipsEl.innerHTML = '';
+  lane.faceIds.forEach(fid => chipsEl.appendChild(_makeChip(fid, lane.id)));
+
+  // Drop target
+  _makeLaneDropTarget(laneEl, lane.id);
+}
+
+function _renderNoisePool() {
+  const el = document.getElementById('grp-noise-chips');
+  el.innerHTML = '';
+  _board.noise.forEach(fid => el.appendChild(_makeChip(fid, '__noise__')));
+  document.getElementById('noise-pool-count').textContent = _board.noise.size;
+}
+
+function _makeChip(faceId, laneId) {
+  const face = selectedFaces.get(faceId) || {};
+  const src  = (face.source_file || '').split('/').pop() || '–';
+  const conf = face.face_confidence;
+
+  const chip = document.createElement('div');
+  chip.className = 'grp-chip';
+  chip.draggable = true;
+  chip.dataset.fid    = faceId;
+  chip.dataset.srcLane = laneId;
+  chip.innerHTML = `
+    <code>${faceId.slice(0, 8)}…</code>
+    <span class="chip-src" title="${src}">${src}</span>
+    ${conf != null ? `<span style="color:var(--muted);font-size:.65rem">⚡ ${conf.toFixed(2)}</span>` : ''}
+    <div class="d-flex gap-1 mt-1">
+      <button class="btn btn-xs btn-outline-secondary py-0 chip-search" title="Suchen">🔍</button>
+      <button class="btn btn-xs btn-outline-secondary py-0 chip-compare" title="Vergleichen">⚖️</button>
+      <button class="btn btn-xs btn-outline-danger py-0 chip-remove ms-auto" title="Entfernen">✕</button>
+    </div>`;
+
+  // Drag events
+  chip.addEventListener('dragstart', e => {
+    _boardDragFid = faceId;
+    _boardDragSrc = laneId;
+    chip.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', faceId);
+  });
+  chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+
+  // Action buttons
+  chip.querySelector('.chip-search').addEventListener('click', () => {
+    document.querySelector('[data-bs-target="#tab-tools"]').click();
+    setTimeout(() => {
+      document.getElementById('search-face-id').value = faceId;
+      document.querySelector('[data-bs-target="#tool-search"]').click();
+      doFaceSearch();
+    }, 200);
+  });
+  chip.querySelector('.chip-compare').addEventListener('click', () => prefillCompare(faceId));
+  chip.querySelector('.chip-remove').addEventListener('click', () => {
+    _boardMoveFace(faceId, laneId, '__noise__');
+  });
+
+  return chip;
+}
+
+function _makeLaneDropTarget(el, laneId) {
+  el.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    el.classList.add('drag-over-lane');
+  });
+  el.addEventListener('dragleave', e => {
+    if (!el.contains(e.relatedTarget)) el.classList.remove('drag-over-lane');
+  });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('drag-over-lane');
+    const fid = e.dataTransfer.getData('text/plain') || _boardDragFid;
+    const src = _boardDragSrc;
+    if (fid && src !== laneId) _boardMoveFace(fid, src, laneId);
+  });
+}
+
+function _boardMoveFace(faceId, fromLaneId, toLaneId) {
+  // Remove from source
+  if (fromLaneId === '__noise__') {
+    _board.noise.delete(faceId);
+  } else {
+    const src = _board.lanes.find(l => l.id === fromLaneId);
+    if (src) src.faceIds.delete(faceId);
+  }
+  // Add to destination
+  if (toLaneId === '__noise__') {
+    _board.noise.add(faceId);
+  } else {
+    const dst = _board.lanes.find(l => l.id === toLaneId);
+    if (dst) dst.faceIds.add(faceId);
+  }
+
+  // Re-render affected lanes only
+  if (fromLaneId !== '__noise__') {
+    const src = _board.lanes.find(l => l.id === fromLaneId);
+    if (src) _renderLane(src);
+  } else {
+    _renderNoisePool();
+  }
+  if (toLaneId !== '__noise__') {
+    const dst = _board.lanes.find(l => l.id === toLaneId);
+    if (dst) _renderLane(dst);
+  } else {
+    _renderNoisePool();
+  }
+
+  _boardUpdateCounts();
+}
+
+function _boardDeleteLane(laneId) {
+  const lane = _board.lanes.find(l => l.id === laneId);
+  if (!lane) return;
+  // Move all chips to noise
+  lane.faceIds.forEach(fid => _board.noise.add(fid));
+  _board.lanes = _board.lanes.filter(l => l.id !== laneId);
+  document.getElementById(laneId)?.remove();
+  _renderNoisePool();
+  _boardUpdateCounts();
+}
+
+function _boardUpdateCounts() {
+  const grpCount = document.getElementById('board-grp-count');
+  if (grpCount) grpCount.textContent = `${_board.lanes.length} Gruppen`;
+  const noiseCount = document.getElementById('board-noise-count');
+  if (noiseCount) {
+    noiseCount.textContent = `${_board.noise.size} Noise`;
+    noiseCount.style.display = _board.noise.size ? '' : 'none';
+  }
+}
+
+async function _boardUploadPhoto(file, targetLaneId = null) {
+  const statusEl = document.getElementById('board-upload-status');
+  statusEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Erkenne Gesichter in ${file.name}…`;
+
+  const fd = new FormData();
+  fd.append('file', file);
+  let data;
+  try {
+    const r = await fetch('/faces/embed?cache=true', { method: 'POST', body: fd });
+    data = await r.json();
+    if (!r.ok) throw new Error(data.message || data.detail || r.statusText);
+  } catch(e) {
+    statusEl.textContent = `❌ ${e.message}`;
+    return;
+  }
+
+  const faces = data.faces || data.embeddings || [];
+  const found = faces.filter(f => f.face_id);
+
+  if (found.length === 0) {
+    statusEl.textContent = `⚠️ Keine Gesichter in ${file.name} erkannt.`;
+    return;
+  }
+
+  statusEl.textContent = `✓ ${found.length} Gesicht${found.length > 1 ? 'er' : ''} aus ${file.name} erkannt`;
+
+  // Register in selectedFaces so chips have metadata
+  found.forEach(f => {
+    if (!selectedFaces.has(f.face_id)) {
+      selectedFaces.set(f.face_id, {
+        face_id: f.face_id,
+        source_file: file.name,
+        face_confidence: f.face_confidence,
+        face_quality_score: f.face_quality_score,
+        model_name: f.model,
+      });
+    }
+  });
+
+  if (targetLaneId) {
+    // Drop directly into the specified lane
+    const lane = _board.lanes.find(l => l.id === targetLaneId);
+    if (lane) {
+      found.forEach(f => lane.faceIds.add(f.face_id));
+      _renderLane(lane);
+      _boardUpdateCounts();
+    }
+  } else {
+    // Add to noise pool — user can drag from there
+    found.forEach(f => _board.noise.add(f.face_id));
+    _renderNoisePool();
+    _boardUpdateCounts();
+    statusEl.textContent += ' — ziehe sie in eine Gruppe';
+  }
+}
+
+// Render a simple face chip (used outside the board, e.g. Tools tab)
+function faceChip(faceId, color) {
+  const face = selectedFaces.get(faceId) || {};
+  const src  = face.source_file || '–';
+  const conf = face.face_confidence;
+  const shortId = faceId.slice(0, 8) + '…';
+  return `
+    <div class="face-chip" style="border-color:${color}44" data-face-id="${faceId}">
+      <code style="color:${color}">${shortId}</code>
+      <span class="text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"
+        title="${src}">${src}</span>
+      ${conf != null ? `<span class="text-muted">Konf: ${conf.toFixed(3)}</span>` : ''}
+      <div class="d-flex gap-1 mt-1">
+        <button class="btn btn-xs btn-outline-secondary py-0 cache-grp-search" data-fid="${faceId}" title="Suchen">🔍</button>
+        <button class="btn btn-xs btn-outline-secondary py-0 cache-grp-compare" data-fid="${faceId}" title="Vergleichen">⚖️</button>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════ SESSIONS ════════════════════════
+async function loadSessions() {
+  const r = await fetch('/sessions?limit=100');
+  const d = await r.json();
+  document.getElementById('sessions-info').textContent = `${d.count} aktive Sessionen`;
+
+  document.getElementById('sessions-tbody').innerHTML =
+    d.sessions.map(s => `<tr>
+      <td class="font-mono small">${s.session_id}</td>
+      <td><code>${s.method}</code></td>
+      <td>${s.n_input}</td>
+      <td>${s.n_groups}</td>
+      <td>${s.n_noise}</td>
+      <td><small class="text-muted">${fmtTs(s.created_at)}</small></td>
+      <td>${fmtExp(s.expires_in_seconds)}</td>
+      <td class="text-nowrap">
+        <button class="btn btn-xs btn-outline-secondary py-0 px-1" onclick="showSession('${s.session_id}')">Details</button>
+        <button class="btn btn-xs btn-outline-danger py-0 px-1 ms-1" onclick="deleteSession('${s.session_id}')">✕</button>
+      </td>
+    </tr>`).join('') ||
+    '<tr><td colspan="8" class="text-muted text-center py-4">Keine Sessionen</td></tr>';
+}
+
+async function showSession(sid) {
+  const r = await fetch(`/sessions/${sid}`);
+  const d = await r.json();
+  document.getElementById('session-modal-title').textContent = sid;
+  document.getElementById('session-modal-json').textContent = JSON.stringify(d, null, 2);
+  new bootstrap.Modal(document.getElementById('session-modal')).show();
+}
+
+async function deleteSession(sid) {
+  if (!confirm(`Session ${sid.slice(0,8)}… löschen?`)) return;
+  await fetch(`/sessions/${sid}`, { method: 'DELETE' });
+  loadSessions();
+}
+
+// ═══════════════════════════════════════ ADMIN ACTIONS ═══════════════════
+async function purgeExpired() {
+  const r = await fetch('/admin/purge', { method: 'POST' });
+  const d = await r.json();
+  alert(`✓ ${d.purged_records} abgelaufene Einträge bereinigt.`);
+  loadHealth();
+  const active = document.querySelector('#main-tabs .nav-link.active')?.dataset.bsTarget;
+  if (active === '#tab-cache') loadFaceCache(0);
+  if (active === '#tab-sessions') loadSessions();
+}
+
+// ═══════════════════════════════════════ AUTO-REFRESH ════════════════════
+let refreshTimer = null;
+
+function startRefresh() {
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    loadHealth();
+    const active = document.querySelector('#main-tabs .nav-link.active')?.dataset.bsTarget;
+    if (active === '#tab-jobs')     loadJobs();
+    if (active === '#tab-cache')    loadFaceCache(cacheOffset);
+    if (active === '#tab-sessions') loadSessions();
+  }, 8000);
+}
+
+document.getElementById('auto-refresh').addEventListener('change', e => {
+  e.target.checked ? startRefresh() : clearInterval(refreshTimer);
+});
+
+// Switch tab handler
+document.getElementById('main-tabs').addEventListener('shown.bs.tab', e => {
+  const t = e.target.dataset.bsTarget;
+  if (t === '#tab-jobs')      loadJobs();
+  if (t === '#tab-cache')     loadFaceCache(0);
+  if (t === '#tab-sessions')  loadSessions();
+  if (t === '#tab-embedding') initEmbeddingTab();
+});
+
+// ═══════════════════════════════════════ EMBEDDING SPACE ═════════════════
+
+const PROJ_COLORS = [
+  '#3b82f6','#ef4444','#22c55e','#f59e0b','#a855f7',
+  '#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6',
+  '#6366f1','#e11d48','#16a34a','#d97706','#7c3aed',
+  '#0891b2','#ea580c','#db2777','#65a30d','#0f766e',
+];
+const NOISE_COLOR   = '#64748b';
+const UPLOAD_COLOR  = '#facc15';  // yellow stars for uploaded photo faces
+
+// face_ids from the most recently uploaded photo (to highlight in plot)
+let _projHighlightIds = new Set();
+// last projection data (to re-render highlight without re-fetching)
+let _projLastData = null;
+let _projLastDims = 2;
+let _projLastMethod = 'tsne';
+
+async function initEmbeddingTab() {
+  try {
+    const r = await fetch('/sessions?limit=50');
+    const d = await r.json();
+    const sel = document.getElementById('proj-session');
+    while (sel.options.length > 1) sel.remove(1);
+    (d.sessions || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.session_id;
+      const ts = new Date(s.created_at * 1000).toLocaleTimeString();
+      opt.textContent = `${s.method} · ${s.n_groups} Gruppen · ${ts}`;
+      sel.appendChild(opt);
+    });
+  } catch(e) { /* non-fatal */ }
+}
+
+async function runProjection() {
+  const method  = document.getElementById('proj-method').value;
+  const dims    = parseInt(document.querySelector('input[name="proj-dims"]:checked').value);
+  const session = document.getElementById('proj-session').value;
+  const limit   = document.getElementById('proj-limit').value;
+
+  const spinner = document.getElementById('proj-spinner');
+  const status  = document.getElementById('proj-status');
+  spinner.classList.remove('d-none');
+  status.textContent = `Berechne ${method.toUpperCase()} (${dims}D) für bis zu ${limit} Embeddings…`;
+
+  let url = `/faces/projection?method=${method}&dims=${dims}&limit=${limit}`;
+  if (session) url += `&session_id=${encodeURIComponent(session)}`;
+
+  let data;
+  try {
+    const r = await fetch(url);
+    data = await r.json();
+    if (!r.ok) throw new Error(data.message || data.detail || r.statusText);
+  } catch(e) {
+    status.textContent = `❌ Fehler: ${e.message}`;
+    spinner.classList.add('d-none');
+    return;
+  }
+  spinner.classList.add('d-none');
+
+  const pts = data.points || [];
+  if (pts.length === 0) {
+    status.textContent = 'Keine Embeddings im Cache. Lade zuerst Fotos hoch.';
+    return;
+  }
+
+  _projLastData   = pts;
+  _projLastDims   = dims;
+  _projLastMethod = method;
+
+  const highlightCount = pts.filter(p => _projHighlightIds.has(p.face_id)).length;
+  status.textContent =
+    `${pts.length} Punkte · ${method.toUpperCase()} ${dims}D` +
+    (session            ? ' · eingefärbt nach Session' : '') +
+    (highlightCount > 0 ? ` · ${highlightCount} ★ hervorgehoben` : '');
+
+  _doRender(pts, dims, method);
+}
+
+function _loadPlotlyThen(cb) {
+  if (window.Plotly) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+function _doRender(pts, dims, method) {
+  _loadPlotlyThen(() => {
+    // Separate highlighted (uploaded) points from the rest
+    const highlighted = pts.filter(p => _projHighlightIds.has(p.face_id));
+    const rest        = pts.filter(p => !_projHighlightIds.has(p.face_id));
+
+    // Group non-highlighted points by group_id
+    const byGroup = {};
+    rest.forEach(p => {
+      const key = p.group_id != null ? `Gruppe ${p.group_id}` : 'Ungrupiert';
+      if (!byGroup[key]) byGroup[key] = { key, gid: p.group_id, pts: [] };
+      byGroup[key].pts.push(p);
+    });
+
+    const groupKeys = Object.keys(byGroup).sort((a, b) => {
+      if (a === 'Ungrupiert') return 1;
+      if (b === 'Ungrupiert') return -1;
+      return (byGroup[a].gid ?? 999) - (byGroup[b].gid ?? 999);
+    });
+
+    const makeTrace = (ps, name, color, symbol, size, opacity, extraProps = {}) => {
+      const base = {
+        name, mode: 'markers',
+        marker: {
+          color, symbol,
+          size: Array.isArray(size) ? size : ps.map(() => size),
+          opacity,
+          line: { width: 1, color: '#0f1117' },
+        },
+        text: ps.map(p =>
+          `<b>${p.face_id.slice(0,8)}…</b><br>` +
+          `${p.source_file ? p.source_file.split('/').pop() : '–'}<br>` +
+          `Qualität: ${p.quality != null ? p.quality.toFixed(2) : '–'}<br>` +
+          (p.group_id != null ? `Gruppe ${p.group_id}` : 'Ungrupiert')
+        ),
+        hoverinfo: 'text+name',
+        customdata: ps,
+        ...extraProps,
+      };
+      if (dims === 3) {
+        return { ...base, type: 'scatter3d', x: ps.map(p=>p.x), y: ps.map(p=>p.y), z: ps.map(p=>p.z||0) };
+      }
+      return { ...base, type: 'scatter', x: ps.map(p=>p.x), y: ps.map(p=>p.y) };
+    };
+
+    const traces = [
+      // Regular cache points (grouped by colour)
+      ...groupKeys.map(key => {
+        const grp   = byGroup[key];
+        const color = grp.gid != null ? PROJ_COLORS[grp.gid % PROJ_COLORS.length] : NOISE_COLOR;
+        return makeTrace(
+          grp.pts, key, color, 'circle',
+          grp.pts.map(p => 5 + (p.quality || 0) * 7), 0.75
+        );
+      }),
+      // Highlighted (uploaded) points — yellow stars on top
+      ...(highlighted.length > 0 ? [makeTrace(
+        highlighted, '★ Dieses Foto', UPLOAD_COLOR, 'star',
+        highlighted.map(p => 14 + (p.quality || 0) * 6), 1.0,
+        { marker: { color: UPLOAD_COLOR, symbol: 'star', size: highlighted.map(p=>14+(p.quality||0)*6), opacity:1, line:{width:1.5,color:'#fff'} } }
+      )] : []),
+    ];
+
+    const axisStyle = {
+      showgrid: true, gridcolor: '#2d3748', zeroline: false,
+      tickfont: { color: '#94a3b8', size: 10 },
+      title: { font: { color: '#94a3b8' } },
+    };
+
+    const layout = {
+      paper_bgcolor: '#0f1117', plot_bgcolor: '#0f1117',
+      font: { color: '#e2e8f0', family: 'system-ui, sans-serif' },
+      margin: { t: 30, r: 20, b: 40, l: 40 },
+      legend: { bgcolor: '#1a1d27', bordercolor: '#2d3748', borderwidth: 1, font: { color: '#e2e8f0', size: 11 } },
+      xaxis: { ...axisStyle, title: `${method.toUpperCase()} dim 1` },
+      yaxis: { ...axisStyle, title: `${method.toUpperCase()} dim 2` },
+      ...(dims === 3 ? { scene: {
+        bgcolor: '#0f1117',
+        xaxis: { ...axisStyle, backgroundcolor: '#0f1117' },
+        yaxis: { ...axisStyle, backgroundcolor: '#0f1117' },
+        zaxis: { ...axisStyle, backgroundcolor: '#0f1117' },
+      }} : {}),
+    };
+
+    Plotly.newPlot('proj-plot', traces, layout, {
+      responsive: true, displayModeBar: true,
+      modeBarButtonsToRemove: ['sendDataToCloud'], displaylogo: false,
+    });
+
+    document.getElementById('proj-plot').on('plotly_click', ev => {
+      const pt = ev.points[0]?.customdata;
+      if (pt) showProjPointDetail(pt);
+    });
+
+    // Legend
+    const legendEl = document.getElementById('proj-legend');
+    legendEl.innerHTML = '';
+    groupKeys.forEach(key => {
+      const grp   = byGroup[key];
+      const color = grp.gid != null ? PROJ_COLORS[grp.gid % PROJ_COLORS.length] : NOISE_COLOR;
+      legendEl.innerHTML += `
+        <div class="proj-legend-item">
+          <span class="proj-legend-dot" style="background:${color}"></span>
+          <span>${key}</span><span class="text-muted ms-1">(${grp.pts.length})</span>
+        </div>`;
+    });
+    if (highlighted.length > 0) {
+      legendEl.innerHTML += `
+        <div class="proj-legend-item">
+          <span class="proj-legend-dot" style="background:${UPLOAD_COLOR};border-radius:2px"></span>
+          <span>★ Dieses Foto</span><span class="text-muted ms-1">(${highlighted.length})</span>
+        </div>`;
+    }
+  });
+}
+
+// ── Photo upload → highlight ──────────────────────────────────────────────────
+function projHandleDrop(e) {
+  const file = e.dataTransfer.files[0];
+  if (file) projHandleFile(file);
+}
+
+async function projHandleFile(file) {
+  if (!file) return;
+  const status  = document.getElementById('proj-upload-status');
+  const preview = document.getElementById('proj-upload-preview');
+  const faceBox = document.getElementById('proj-upload-faces');
+
+  // Show image preview
+  const dataUrl = await new Promise(res => {
+    const fr = new FileReader(); fr.onload = e => res(e.target.result); fr.readAsDataURL(file);
+  });
+  preview.innerHTML = `<img src="${dataUrl}" style="max-height:120px;max-width:100%;border-radius:6px;object-fit:contain">`;
+
+  status.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Erkenne Gesichter…`;
+  faceBox.innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  let data;
+  try {
+    const r = await fetch('/faces/embed?cache=true', { method: 'POST', body: fd });
+    data = await r.json();
+    if (!r.ok) throw new Error(data.message || data.detail || r.statusText);
+  } catch(e) {
+    status.textContent = `❌ ${e.message}`;
+    return;
+  }
+
+  // Endpoint returns { faces: [...] }, not { embeddings: [...] }
+  const embeddings = data.faces || data.embeddings || [];
+  const found = embeddings.filter(e => e.face_id);
+
+  if (found.length === 0) {
+    status.textContent = '⚠️ Keine Gesichter erkannt.';
+    _projHighlightIds = new Set();
+    return;
+  }
+
+  _projHighlightIds = new Set(found.map(e => e.face_id));
+  status.textContent = `✓ ${found.length} Gesicht${found.length > 1 ? 'er' : ''} erkannt — werden im Plot hervorgehoben`;
+
+  // Show face chips
+  faceBox.innerHTML = found.map(e => `
+    <div class="face-chip" style="border-color:${UPLOAD_COLOR}44">
+      <span class="text-warning small">★ Gesicht ${e.face_index ?? ''}</span>
+      <code style="font-size:.68rem">${e.face_id}</code>
+      <span class="text-muted" style="font-size:.7rem">Konfidenz: ${e.face_confidence ? e.face_confidence.toFixed(2) : '–'}</span>
+    </div>`).join('');
+
+  // If a projection is already rendered, re-render immediately with highlights.
+  // Otherwise kick off a new projection automatically.
+  if (_projLastData) {
+    _doRender(_projLastData, _projLastDims, _projLastMethod);
+    document.getElementById('proj-status').textContent +=
+      ` · ${found.length} ★ hervorgehoben`;
+  } else {
+    status.textContent += ' — berechne Projection…';
+    runProjection();
+  }
+}
+
+function showProjPointDetail(pt) {
+  const panel = document.getElementById('proj-point-detail');
+  const body  = document.getElementById('proj-point-body');
+  panel.classList.remove('d-none');
+  const isHighlighted = _projHighlightIds.has(pt.face_id);
+
+  // Build HTML without any face_id in onclick attributes —
+  // IDs with hyphens/special chars break inline JS string literals.
+  // Instead we attach listeners after inserting the HTML.
+  body.innerHTML = `
+    <div class="col-auto">
+      <div class="small text-muted mb-1">face_id</div>
+      <code class="font-mono">${pt.face_id}</code>
+      ${isHighlighted ? '<span class="badge ms-1" style="background:#854d0e;color:#facc15">★ dieses Foto</span>' : ''}
+    </div>
+    <div class="col-auto">
+      <div class="small text-muted mb-1">Datei</div>
+      <span class="small">${pt.source_file ? pt.source_file.split('/').pop() : '–'}</span>
+    </div>
+    <div class="col-auto">
+      <div class="small text-muted mb-1">Qualität</div>
+      <span class="small">${pt.quality != null ? pt.quality.toFixed(3) : '–'}</span>
+    </div>
+    <div class="col-auto">
+      <div class="small text-muted mb-1">Gruppe</div>
+      <span class="small">${pt.group_id != null ? `Gruppe ${pt.group_id}` : '–'}</span>
+    </div>
+    <div class="col-auto d-flex align-items-end gap-1">
+      <button class="btn btn-xs btn-outline-primary" id="proj-btn-search">🔍 Suchen</button>
+      <button class="btn btn-xs btn-outline-secondary" id="proj-btn-compare">⚖️ Vergleichen</button>
+    </div>`;
+
+  // Attach handlers using closures — no string interpolation of face_id needed
+  document.getElementById('proj-btn-search').addEventListener('click', () => {
+    document.querySelector('[data-bs-target="#tab-tools"]').click();
+    setTimeout(() => {
+      document.getElementById('search-face-id').value = pt.face_id;
+      document.querySelector('[data-bs-target="#tool-search"]').click();
+    }, 200);
+  });
+
+  document.getElementById('proj-btn-compare').addEventListener('click', () => {
+    prefillCompare(pt.face_id);
+  });
+}
+
+// ═══════════════════════════════════════ INIT ════════════════════════════
+loadHealth();
+startRefresh();
+</script>
+</body>
+</html>

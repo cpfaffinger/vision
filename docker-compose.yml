@@ -1,0 +1,161 @@
+# =============================================================================
+#  Vision API – Docker Compose
+#
+#  Usage:
+#    docker compose up                          # uses .env (symlink to profile)
+#    docker compose --env-file envs/.env.medium up
+#    docker compose --env-file envs/.env.high   up
+#    docker compose --env-file envs/.env.gpu    up --profile gpu
+#    docker compose --env-file envs/.env.dev    up  (development with reload)
+#
+#  Quick-switch helper (bash):
+#    cp envs/.env.medium .env && docker compose up --build
+# =============================================================================
+
+x-vision-base: &vision-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - uploads:/app/uploads
+    - data:/app/data
+    - models:/root/.deepface/weights
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 90s
+
+services:
+
+  # ── Standard service (CPU, all profiles) ────────────────────────────────────
+  vision-api:
+    <<: *vision-base
+    container_name: vision-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      MODEL_NAME:                   ${MODEL_NAME:-VGG-Face}
+      DETECTOR_BACKEND:             ${DETECTOR_BACKEND:-retinaface}
+      WORKERS:                      ${WORKERS:-2}
+      QUEUE_CONCURRENCY:            ${QUEUE_CONCURRENCY:-1}
+      QUEUE_MAX_SIZE:               ${QUEUE_MAX_SIZE:-50}
+      QUEUE_JOB_TIMEOUT_SECONDS:    ${QUEUE_JOB_TIMEOUT_SECONDS:-120}
+      JOB_RESULT_TTL_SECONDS:       ${JOB_RESULT_TTL_SECONDS:-43200}
+      MAX_UPLOAD_MB:                ${MAX_UPLOAD_MB:-20}
+      FACE_TTL_SECONDS:             ${FACE_TTL_SECONDS:-86400}
+      GROUP_TTL_SECONDS:            ${GROUP_TTL_SECONDS:-604800}
+      PURGE_INTERVAL_SECONDS:       ${PURGE_INTERVAL_SECONDS:-3600}
+      DB_PATH:                      ${DB_PATH:-/app/data/vision.db}
+      LOG_LEVEL:                    ${LOG_LEVEL:-INFO}
+      MIN_FACE_CONFIDENCE:          ${MIN_FACE_CONFIDENCE:-0.70}
+      MAX_IMAGE_PX:                 ${MAX_IMAGE_PX:-1920}
+      ENABLE_PREPROCESSING:         ${ENABLE_PREPROCESSING:-true}
+      DEFAULT_CALLBACK_URL:         ${DEFAULT_CALLBACK_URL:-}
+      DEFAULT_CALLBACK_AUTH_USER:   ${DEFAULT_CALLBACK_AUTH_USER:-}
+      DEFAULT_CALLBACK_AUTH_PASS:   ${DEFAULT_CALLBACK_AUTH_PASS:-}
+      CALLBACK_TIMEOUT_SECONDS:     ${CALLBACK_TIMEOUT_SECONDS:-15}
+      CALLBACK_MAX_RETRIES:         ${CALLBACK_MAX_RETRIES:-3}
+      # Suppress TensorFlow C++ noise on CPU-only machines
+      TF_CPP_MIN_LOG_LEVEL:         "3"
+      TF_ENABLE_ONEDNN_OPTS:        "0"
+    deploy:
+      resources:
+        limits:
+          cpus:   "${CPU_LIMIT:-4.0}"
+          memory: "${MEM_LIMIT:-4G}"
+        reservations:
+          cpus:   "${CPU_RESERVE:-1.0}"
+          memory: "${MEM_RESERVE:-1G}"
+
+  # ── GPU variant (activate with: --profile gpu) ────────────────────────────
+  vision-api-gpu:
+    <<: *vision-base
+    container_name: vision-api-gpu
+    profiles: ["gpu"]
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      MODEL_NAME:                   ${MODEL_NAME:-ArcFace}
+      DETECTOR_BACKEND:             ${DETECTOR_BACKEND:-yolov8}
+      WORKERS:                      ${WORKERS:-2}
+      QUEUE_CONCURRENCY:            ${QUEUE_CONCURRENCY:-8}
+      QUEUE_MAX_SIZE:               ${QUEUE_MAX_SIZE:-2000}
+      QUEUE_JOB_TIMEOUT_SECONDS:    ${QUEUE_JOB_TIMEOUT_SECONDS:-30}
+      JOB_RESULT_TTL_SECONDS:       ${JOB_RESULT_TTL_SECONDS:-86400}
+      MAX_UPLOAD_MB:                ${MAX_UPLOAD_MB:-100}
+      FACE_TTL_SECONDS:             ${FACE_TTL_SECONDS:-604800}
+      GROUP_TTL_SECONDS:            ${GROUP_TTL_SECONDS:-2592000}
+      PURGE_INTERVAL_SECONDS:       ${PURGE_INTERVAL_SECONDS:-7200}
+      DB_PATH:                      ${DB_PATH:-/app/data/vision.db}
+      LOG_LEVEL:                    ${LOG_LEVEL:-INFO}
+      MIN_FACE_CONFIDENCE:          ${MIN_FACE_CONFIDENCE:-0.70}
+      MAX_IMAGE_PX:                 ${MAX_IMAGE_PX:-1920}
+      ENABLE_PREPROCESSING:         ${ENABLE_PREPROCESSING:-true}
+      DEFAULT_CALLBACK_URL:         ${DEFAULT_CALLBACK_URL:-}
+      DEFAULT_CALLBACK_AUTH_USER:   ${DEFAULT_CALLBACK_AUTH_USER:-}
+      DEFAULT_CALLBACK_AUTH_PASS:   ${DEFAULT_CALLBACK_AUTH_PASS:-}
+      CALLBACK_TIMEOUT_SECONDS:     ${CALLBACK_TIMEOUT_SECONDS:-10}
+      CALLBACK_MAX_RETRIES:         ${CALLBACK_MAX_RETRIES:-5}
+      TF_CPP_MIN_LOG_LEVEL:         "3"
+      TF_ENABLE_ONEDNN_OPTS:        "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Development variant (activate with: --profile dev) ────────────────────
+  vision-api-dev:
+    <<: *vision-base
+    container_name: vision-api-dev
+    profiles: ["dev"]
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - uploads:/app/uploads
+      - data:/app/data
+      - models:/root/.deepface/weights
+      - .:/app   # mount source → hot-reload works
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 1
+      --reload
+      --log-level debug
+    environment:
+      MODEL_NAME:                   ${MODEL_NAME:-ArcFace}
+      DETECTOR_BACKEND:             ${DETECTOR_BACKEND:-retinaface}
+      WORKERS:                      1
+      QUEUE_CONCURRENCY:            1
+      QUEUE_MAX_SIZE:               5
+      QUEUE_JOB_TIMEOUT_SECONDS:    600
+      JOB_RESULT_TTL_SECONDS:       3600
+      MAX_UPLOAD_MB:                10
+      FACE_TTL_SECONDS:             3600
+      GROUP_TTL_SECONDS:            7200
+      PURGE_INTERVAL_SECONDS:       300
+      DB_PATH:                      /app/data/vision_dev.db
+      LOG_LEVEL:                    DEBUG
+      MIN_FACE_CONFIDENCE:          0.70
+      MAX_IMAGE_PX:                 1920
+      ENABLE_PREPROCESSING:         "true"
+      DEFAULT_CALLBACK_URL:         ${DEFAULT_CALLBACK_URL:-}
+      DEFAULT_CALLBACK_AUTH_USER:   ${DEFAULT_CALLBACK_AUTH_USER:-}
+      DEFAULT_CALLBACK_AUTH_PASS:   ${DEFAULT_CALLBACK_AUTH_PASS:-}
+      CALLBACK_TIMEOUT_SECONDS:     30
+      CALLBACK_MAX_RETRIES:         1
+      TF_CPP_MIN_LOG_LEVEL:         "3"
+      TF_ENABLE_ONEDNN_OPTS:        "0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach host webhook server
+
+volumes:
+  uploads:
+  data:
+  models:
