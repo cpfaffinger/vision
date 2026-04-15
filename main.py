@@ -1774,60 +1774,215 @@ def _parse_barcode(bc) -> dict:
     }
 
 
-def _cv2_qr_positions(img_gray: np.ndarray) -> dict[str, list[dict]]:
+def _build_preprocessed_images(img_bgr: np.ndarray) -> list[np.ndarray]:
     """
-    Use OpenCV's built-in QR detector to retrieve corner polygons.
-    Returns a dict keyed by decoded text value → list of 4 corner dicts.
-    Used as a fallback when pyzbar returns zero coordinates for QR codes.
+    Generate multiple preprocessed RGB variants of the input image.
+
+    Each variant targets a different class of degradation (poor contrast,
+    uneven lighting, blur, small print, …).  The caller runs pyzbar on each
+    variant and merges the results with position-aware deduplication so the
+    same physical barcode is never counted twice.
+
+    All images are returned as **RGB** uint8 arrays (pyzbar / PIL convention).
     """
-    result: dict[str, list[dict]] = {}
+    variants: list[np.ndarray] = []
+
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    gray    = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # ── 1. Original colour image (best quality baseline) ─────────────────────
+    variants.append(img_rgb)
+
+    # ── 2. Global histogram equalisation → RGB ───────────────────────────────
+    eq = cv2.equalizeHist(gray)
+    variants.append(cv2.cvtColor(eq, cv2.COLOR_GRAY2RGB))
+
+    # ── 3. CLAHE on luminance (L channel in LAB) ────────────────────────────
+    #    Adaptive local contrast enhancement – much better than global
+    #    equalisation for unevenly lit images (shadows, glare, reflections).
     try:
-        detector = cv2.QRCodeDetector()
-        # detectAndDecodeMulti handles several QR codes in one image
-        ok, texts, pts, _ = detector.detectAndDecodeMulti(img_gray)
-        if ok and pts is not None:
-            for text, corners in zip(texts, pts):
-                if text and corners is not None:
-                    result[text] = [
-                        {"x": int(corners[i][0]), "y": int(corners[i][1])}
-                        for i in range(len(corners))
-                    ]
+        lab        = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+        l, a, b    = cv2.split(lab)
+        clahe      = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        lab        = cv2.merge([clahe.apply(l), a, b])
+        clahe_bgr  = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        variants.append(cv2.cvtColor(clahe_bgr, cv2.COLOR_BGR2RGB))
     except Exception:
         pass
-    return result
+
+    # ── 4. Adaptive Gaussian threshold ───────────────────────────────────────
+    #    Handles uneven lighting where a global threshold fails entirely.
+    try:
+        adapt = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, blockSize=51, C=11,
+        )
+        variants.append(cv2.cvtColor(adapt, cv2.COLOR_GRAY2RGB))
+    except Exception:
+        pass
+
+    # ── 5. Otsu binarisation ─────────────────────────────────────────────────
+    #    Automatic optimal threshold – works well for clean bimodal images
+    #    (printed barcodes on plain background).
+    try:
+        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(cv2.cvtColor(otsu, cv2.COLOR_GRAY2RGB))
+    except Exception:
+        pass
+
+    # ── 6. Sharpened image (unsharp mask) ────────────────────────────────────
+    #    Recovers slightly blurred / out-of-focus barcodes.
+    try:
+        blurred  = cv2.GaussianBlur(img_bgr, (0, 0), sigmaX=3)
+        sharp    = cv2.addWeighted(img_bgr, 1.5, blurred, -0.5, 0)
+        variants.append(cv2.cvtColor(sharp, cv2.COLOR_BGR2RGB))
+    except Exception:
+        pass
+
+    # ── 7. Morphological close then Otsu ─────────────────────────────────────
+    #    Fills small gaps / noise in damaged barcodes before binarising.
+    try:
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        closed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+        _, closed_otsu = cv2.threshold(closed, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(cv2.cvtColor(closed_otsu, cv2.COLOR_GRAY2RGB))
+    except Exception:
+        pass
+
+    # ── 8. 2× upscale (for small / distant barcodes) ────────────────────────
+    #    Only when the image is small enough that 2× is still reasonable.
+    h, w = img_bgr.shape[:2]
+    if max(h, w) <= 1200:
+        try:
+            up = cv2.resize(img_bgr, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
+            variants.append(cv2.cvtColor(up, cv2.COLOR_BGR2RGB))
+        except Exception:
+            pass
+
+    return variants
+
+
+def _dedup_key_from_rect(rect, scale: float = 1.0) -> tuple[int, int]:
+    """Return quantised (cx, cy) from a pyzbar rect for deduplication."""
+    cx = cy = 0
+    if rect is not None:
+        try:
+            cx = int(rect.left) + int(rect.width) // 2
+            cy = int(rect.top) + int(rect.height) // 2
+        except AttributeError:
+            try:
+                cx = int(rect[0]) + int(rect[2]) // 2
+                cy = int(rect[1]) + int(rect[3]) // 2
+            except Exception:
+                pass
+    # Undo any upscale so coordinates match the original image grid
+    cx = int(cx / scale)
+    cy = int(cy / scale)
+    return cx // 50, cy // 50
+
+
+def _cv2_qr_detect(img_gray: np.ndarray) -> list[dict]:
+    """
+    Use OpenCV's built-in QR detector as a **full decoder**.
+
+    Returns a list of parsed barcode dicts (same schema as _parse_barcode)
+    for every QR code that cv2 can decode.  This catches QR codes that
+    pyzbar / libzbar misses (different Reed-Solomon error correction
+    implementation, different binarisation).
+    """
+    results: list[dict] = []
+    try:
+        detector = cv2.QRCodeDetector()
+        ok, texts, pts, _ = detector.detectAndDecodeMulti(img_gray)
+        if not ok or pts is None:
+            return results
+        for text, corners in zip(texts, pts):
+            if not text or corners is None:
+                continue
+            poly = [
+                {"x": int(corners[i][0]), "y": int(corners[i][1])}
+                for i in range(len(corners))
+            ]
+            xs = [p["x"] for p in poly]
+            ys = [p["y"] for p in poly]
+            results.append({
+                "data":               text,
+                "symbology":          "QRCODE",
+                "symbology_friendly": "QR Code",
+                "polygon":            poly,
+                "bounding_rect": {
+                    "left":   min(xs),
+                    "top":    min(ys),
+                    "width":  max(xs) - min(xs),
+                    "height": max(ys) - min(ys),
+                },
+                "quality":            1,
+            })
+    except Exception:
+        pass
+    return results
 
 
 def _run_barcode_detection(img_bgr: np.ndarray) -> list[dict]:
     """
-    Detect and decode all barcodes in a BGR image.
+    Detect and decode **all** barcodes in a BGR image.
 
-    Strategy (most → least reliable for position data):
-      1. pyzbar on original RGB image  – best quality, full colour channel
-      2. pyzbar on contrast-enhanced grey image  – helps low-contrast prints
-      3. cv2.QRCodeDetector fallback – patches zero-polygon QR results from
-         libzbar builds that don't return position for QR codes on grey input
+    Runs a comprehensive multi-pass strategy to maximise recall even on
+    poorly printed, damaged, low-contrast, blurred, or very small barcodes:
+
+      1. **pyzbar** on 8 preprocessed image variants (original colour,
+         histogram-equalised, CLAHE, adaptive threshold, Otsu, sharpened,
+         morphological close + Otsu, 2× upscale).
+      2. **OpenCV QRCodeDetector** as a full secondary decoder — its
+         Reed-Solomon implementation catches QR codes that libzbar cannot
+         reconstruct.
+      3. Position-aware deduplication ensures each physical barcode is
+         reported exactly once even when multiple passes decode it.
     """
     from pyzbar import pyzbar
 
-    # Convert once; reuse across scans
-    img_rgb  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    gray     = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    enhanced = cv2.equalizeHist(gray)
-    # Convert grey back to RGB so pyzbar uses the same code-path as the colour
-    # scan — some libzbar builds only fill polygon coords for multi-channel input
-    enhanced_rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # ── Generate all preprocessed variants ─────────────────────────────────────
+    variants = _build_preprocessed_images(img_bgr)
 
     found: list[dict] = []
     seen:  set        = set()
 
-    for src in (img_rgb, enhanced_rgb):
+    # ── Pass A: pyzbar on every variant ────────────────────────────────────────
+    h_orig, w_orig = img_bgr.shape[:2]
+    for src in variants:
+        # Determine scale relative to original (for dedup coordinate mapping)
+        src_h = src.shape[0]
+        scale = src_h / h_orig if h_orig > 0 else 1.0
+
         for bc in pyzbar.decode(Image.fromarray(src)):
-            key = (bc.data, bc.type)
+            # Position-aware dedup key: same physical barcode across different
+            # preprocessing passes is deduplicated, but two barcodes at
+            # different positions with identical content are kept.
+            rect = getattr(bc, "rect", None)
+            qx, qy = _dedup_key_from_rect(rect, scale)
+            key = (bc.data, bc.type, qx, qy)
             if key in seen:
                 continue
             seen.add(key)
             try:
-                found.append(_parse_barcode(bc))
+                parsed = _parse_barcode(bc)
+                # If the image was upscaled, map coordinates back to original
+                if abs(scale - 1.0) > 0.01:
+                    inv = 1.0 / scale
+                    parsed["polygon"] = [
+                        {"x": int(p["x"] * inv), "y": int(p["y"] * inv)}
+                        for p in parsed["polygon"]
+                    ]
+                    r = parsed["bounding_rect"]
+                    parsed["bounding_rect"] = {
+                        "left":   int(r["left"]   * inv),
+                        "top":    int(r["top"]    * inv),
+                        "width":  int(r["width"]  * inv),
+                        "height": int(r["height"] * inv),
+                    }
+                found.append(parsed)
             except Exception as exc:
                 log.warning(
                     "Could not parse barcode object (type=%s fields=%s): %s",
@@ -1836,28 +1991,50 @@ def _run_barcode_detection(img_bgr: np.ndarray) -> list[dict]:
                     exc,
                 )
 
-    # ── cv2 QR position fallback ───────────────────────────────────────────────
-    # If any detected QR code still has a zero bounding rect (libzbar limitation
-    # on some Debian builds), patch it with OpenCV's QR detector which always
-    # returns corner coordinates.
+    # ── Pass B: OpenCV QR decoder as secondary engine ──────────────────────────
+    #   cv2.QRCodeDetector uses a completely different binarisation & ECC path
+    #   than libzbar and regularly succeeds where pyzbar fails (and vice-versa).
+    for cv2_bc in _cv2_qr_detect(gray):
+        r = cv2_bc["bounding_rect"]
+        cx = r["left"] + r["width"] // 2
+        cy = r["top"]  + r["height"] // 2
+        key = (cv2_bc["data"].encode("utf-8", errors="replace"), "QRCODE", cx // 50, cy // 50)
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(cv2_bc)
+
+    # Also try cv2 on the enhanced variants that helped pyzbar
+    for extra_gray in (cv2.equalizeHist(gray),):
+        for cv2_bc in _cv2_qr_detect(extra_gray):
+            r = cv2_bc["bounding_rect"]
+            cx = r["left"] + r["width"] // 2
+            cy = r["top"]  + r["height"] // 2
+            key = (cv2_bc["data"].encode("utf-8", errors="replace"), "QRCODE", cx // 50, cy // 50)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(cv2_bc)
+
+    # ── Patch zero-polygon QR codes ────────────────────────────────────────────
+    #   Some libzbar builds return correct data but zero bounding rects for QR.
+    #   Use cv2 positions to fill them in.
     needs_patch = [
         b for b in found
         if b["symbology"] == "QRCODE" and b["bounding_rect"]["width"] == 0
     ]
     if needs_patch:
-        cv2_positions = _cv2_qr_positions(gray)
+        cv2_results = _cv2_qr_detect(gray)
+        # Group by text → list of bounding dicts
+        pos_map: dict[str, list[dict]] = {}
+        for cr in cv2_results:
+            pos_map.setdefault(cr["data"], []).append(cr)
         for b in needs_patch:
-            corners = cv2_positions.get(b["data"])
-            if corners:
-                xs = [p["x"] for p in corners]
-                ys = [p["y"] for p in corners]
-                b["polygon"] = corners
-                b["bounding_rect"] = {
-                    "left":   min(xs),
-                    "top":    min(ys),
-                    "width":  max(xs) - min(xs),
-                    "height": max(ys) - min(ys),
-                }
+            entries = pos_map.get(b["data"])
+            if entries:
+                donor = entries.pop(0)
+                b["polygon"]       = donor["polygon"]
+                b["bounding_rect"] = donor["bounding_rect"]
 
     return found
 
@@ -1935,8 +2112,23 @@ async def detect_barcodes(
     """
     Scans the image for **any number of barcodes** (including zero).
 
-    Runs detection on both the original greyscale and a contrast-enhanced
-    version to maximise recall on low-quality or poorly lit images.
+    Uses a **multi-pass detection pipeline** to maximise recall:
+
+    1. **8 preprocessing variants** — original colour, histogram-equalised,
+       CLAHE, adaptive Gaussian threshold, Otsu binarisation, sharpened
+       (unsharp mask), morphological close + Otsu, 2× upscale (small images).
+    2. **pyzbar (libzbar)** runs on every variant — best all-round decoder.
+    3. **OpenCV QRCodeDetector** as a secondary decoder — different ECC and
+       binarisation catches QR codes that libzbar cannot reconstruct.
+    4. **Position-aware deduplication** ensures each physical barcode is
+       reported exactly once even when multiple passes decode it.
+
+    This pipeline is specifically designed to handle:
+    - Low contrast / poor lighting / shadows / glare
+    - Blurry or slightly out-of-focus images
+    - Small or distant barcodes
+    - Damaged or partially obscured codes
+    - Multiple identical barcodes at different positions
 
     ### Supported symbologies
     QR Code · Code 128 · Code 39 · Code 93 · EAN-13 · EAN-8 ·
