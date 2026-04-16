@@ -1450,11 +1450,13 @@ def face_projection(
     mat   = mat / np.where(norms == 0, 1.0, norms)
 
     # ── 3. Dimensionality reduction ───────────────────────────────────────────
-    n_components = min(dims, len(rows) - 1)   # can't exceed n_samples - 1
+    n_components = dims
     try:
         m = method.lower()
         if m == "pca":
             from sklearn.decomposition import PCA
+            # PCA can produce at most min(n_samples-1, n_features) components
+            n_components = min(dims, len(rows) - 1, mat.shape[1])
             coords = PCA(n_components=n_components, random_state=42).fit_transform(mat)
 
         elif m == "tsne":
@@ -1492,14 +1494,14 @@ def face_projection(
                     "UMAP is not installed. Add 'umap-learn' to requirements.txt.",
                 )
             n_neighbors = max(2, min(15, len(rows) - 1))
-            if len(rows) < n_components + 2:
+            if len(rows) < 2:
                 raise VisionAPIException(
                     422, ErrorCode.INFERENCE_FAILED,
-                    f"UMAP requires at least {n_components + 2} faces for "
-                    f"{n_components}D projection, but only {len(rows)} found.",
+                    f"UMAP requires at least 2 faces, but only {len(rows)} found.",
                 )
-            # PCA pre-reduce high-dim embeddings for speed
-            pre = min(50, mat.shape[1], len(rows) - 1)
+            # PCA pre-reduce high-dim embeddings for speed (keep more dims
+            # than t-SNE for better UMAP quality)
+            pre = min(100, mat.shape[1], len(rows) - 1)
             if mat.shape[1] > pre and pre >= 1:
                 from sklearn.decomposition import PCA as _PCA2
                 mat = _PCA2(n_components=pre, random_state=42).fit_transform(mat)
