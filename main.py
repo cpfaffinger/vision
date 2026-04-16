@@ -81,8 +81,9 @@ log = logging.getLogger("vision-api")
 #                  the C++ level via TF_CPP_MIN_LOG_LEVEL=3 in the env, but the
 #                  Python logger still emits Cloud-TPU and TF-TRT warnings)
 #   absl         – TF's abseil-py used by Keras (progress / config INFO spam)
-for _noisy_logger in ("h5py._conv", "h5py", "tensorflow", "absl"):
-    logging.getLogger(_noisy_logger).setLevel(logging.ERROR)
+for _noisy_logger in ("h5py._conv", "h5py", "tensorflow", "absl",
+                      "numba", "numba.core", "numba.core.ssa", "numba.core.byteflow"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -1458,12 +1459,22 @@ def face_projection(
 
         elif m == "tsne":
             from sklearn.manifold import TSNE
+            n_samples = len(rows)
+            # t-SNE needs at least n_components + 1 samples
+            if n_samples < n_components + 1:
+                raise VisionAPIException(
+                    422, ErrorCode.INFERENCE_FAILED,
+                    f"t-SNE requires at least {n_components + 1} faces for "
+                    f"{n_components}D projection, but only {n_samples} found.",
+                )
             # PCA pre-reduce to 50 dims for speed when embeddings are high-dim
-            pre = min(50, mat.shape[1], mat.shape[0] - 1)
-            if mat.shape[1] > pre:
+            pre = min(50, mat.shape[1], n_samples - 1)
+            if mat.shape[1] > pre and pre >= 1:
                 from sklearn.decomposition import PCA as _PCA
                 mat = _PCA(n_components=pre, random_state=42).fit_transform(mat)
-            perplexity = min(30.0, max(5.0, len(rows) / 4))
+            # perplexity must be strictly less than n_samples
+            perplexity = min(30.0, max(2.0, n_samples / 4))
+            perplexity = min(perplexity, n_samples - 1.0)
             coords = TSNE(
                 n_components=n_components,
                 perplexity=perplexity,
@@ -1480,10 +1491,23 @@ def face_projection(
                     422, ErrorCode.UNKNOWN_METHOD,
                     "UMAP is not installed. Add 'umap-learn' to requirements.txt.",
                 )
-            n_neighbors = min(15, len(rows) - 1)
+            n_neighbors = max(2, min(15, len(rows) - 1))
+            if len(rows) < n_components + 2:
+                raise VisionAPIException(
+                    422, ErrorCode.INFERENCE_FAILED,
+                    f"UMAP requires at least {n_components + 2} faces for "
+                    f"{n_components}D projection, but only {len(rows)} found.",
+                )
+            # PCA pre-reduce high-dim embeddings for speed
+            pre = min(50, mat.shape[1], len(rows) - 1)
+            if mat.shape[1] > pre and pre >= 1:
+                from sklearn.decomposition import PCA as _PCA2
+                mat = _PCA2(n_components=pre, random_state=42).fit_transform(mat)
             coords = umap.UMAP(
                 n_components=n_components,
                 n_neighbors=n_neighbors,
+                n_epochs=200,
+                low_memory=True,
                 random_state=42,
             ).fit_transform(mat)
 
