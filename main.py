@@ -1500,6 +1500,16 @@ def face_projection(
             "Projection failed.", detail=str(exc),
         )
 
+    # Pad coords to the requested number of dims (n_components may be less
+    # than dims when there are very few samples, e.g. 2 faces → max 1 PC).
+    actual_cols = coords.shape[1] if coords.ndim == 2 else 1
+    if coords.ndim == 1:
+        coords = coords.reshape(-1, 1)
+    if actual_cols < dims:
+        pad = np.zeros((coords.shape[0], dims - actual_cols), dtype=coords.dtype)
+        coords = np.concatenate([coords, pad], axis=1)
+    n_components = dims  # now always matches the requested dimensionality
+
     # ── 4. Resolve group colouring from session ───────────────────────────────
     group_map: dict[str, int] = {}   # face_id → group_id
     if session_id:
@@ -1923,78 +1933,73 @@ def _cv2_qr_detect(img_gray: np.ndarray) -> list[dict]:
     return results
 
 
-def _run_barcode_detection(img_bgr: np.ndarray) -> list[dict]:
-    """
-    Detect and decode **all** barcodes in a BGR image.
+def _barcode_center(b: dict) -> tuple[int, int]:
+    """Return (cx, cy) of a parsed barcode dict."""
+    r = b["bounding_rect"]
+    return r["left"] + r["width"] // 2, r["top"] + r["height"] // 2
 
-    Runs a comprehensive multi-pass strategy to maximise recall even on
-    poorly printed, damaged, low-contrast, blurred, or very small barcodes:
 
-      1. **pyzbar** on 8 preprocessed image variants (original colour,
-         histogram-equalised, CLAHE, adaptive threshold, Otsu, sharpened,
-         morphological close + Otsu, 2× upscale).
-      2. **OpenCV QRCodeDetector** as a full secondary decoder — its
-         Reed-Solomon implementation catches QR codes that libzbar cannot
-         reconstruct.
-      3. Position-aware deduplication ensures each physical barcode is
-         reported exactly once even when multiple passes decode it.
-    """
-    from pyzbar import pyzbar
+def _barcode_overlaps_any(b: dict, existing: list[dict], threshold: int = 40) -> bool:
+    """True if barcode *b* is within *threshold* px of any already-found one."""
+    cx, cy = _barcode_center(b)
+    for e in existing:
+        ex, ey = _barcode_center(e)
+        if abs(cx - ex) < threshold and abs(cy - ey) < threshold:
+            return True
+    return False
 
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-    # ── Generate all preprocessed variants ─────────────────────────────────────
-    variants = _build_preprocessed_images(img_bgr)
+def _pyzbar_scan(img_rgb, scale: float, h_orig: int,
+                 found: list[dict], seen: set) -> None:
+    """Run pyzbar on a single image, dedup against *found*/*seen*, append new."""
+    from pyzbar import pyzbar as _pyzbar
 
-    found: list[dict] = []
-    seen:  set        = set()
+    for bc in _pyzbar.decode(Image.fromarray(img_rgb)):
+        rect = getattr(bc, "rect", None)
+        qx, qy = _dedup_key_from_rect(rect, scale)
+        key = (bc.data, bc.type, qx, qy)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            parsed = _parse_barcode(bc)
+            if abs(scale - 1.0) > 0.01:
+                inv = 1.0 / scale
+                parsed["polygon"] = [
+                    {"x": int(p["x"] * inv), "y": int(p["y"] * inv)}
+                    for p in parsed["polygon"]
+                ]
+                r = parsed["bounding_rect"]
+                parsed["bounding_rect"] = {
+                    "left":   int(r["left"]   * inv),
+                    "top":    int(r["top"]    * inv),
+                    "width":  int(r["width"]  * inv),
+                    "height": int(r["height"] * inv),
+                }
+            found.append(parsed)
+        except Exception as exc:
+            log.warning(
+                "Could not parse barcode object (type=%s fields=%s): %s",
+                type(bc).__name__,
+                getattr(bc, "_fields", "?"),
+                exc,
+            )
 
-    # ── Pass A: pyzbar on every variant ────────────────────────────────────────
-    h_orig, w_orig = img_bgr.shape[:2]
-    for src in variants:
-        # Determine scale relative to original (for dedup coordinate mapping)
-        src_h = src.shape[0]
-        scale = src_h / h_orig if h_orig > 0 else 1.0
 
-        for bc in pyzbar.decode(Image.fromarray(src)):
-            # Position-aware dedup key: same physical barcode across different
-            # preprocessing passes is deduplicated, but two barcodes at
-            # different positions with identical content are kept.
-            rect = getattr(bc, "rect", None)
-            qx, qy = _dedup_key_from_rect(rect, scale)
-            key = (bc.data, bc.type, qx, qy)
-            if key in seen:
-                continue
-            seen.add(key)
-            try:
-                parsed = _parse_barcode(bc)
-                # If the image was upscaled, map coordinates back to original
-                if abs(scale - 1.0) > 0.01:
-                    inv = 1.0 / scale
-                    parsed["polygon"] = [
-                        {"x": int(p["x"] * inv), "y": int(p["y"] * inv)}
-                        for p in parsed["polygon"]
-                    ]
-                    r = parsed["bounding_rect"]
-                    parsed["bounding_rect"] = {
-                        "left":   int(r["left"]   * inv),
-                        "top":    int(r["top"]    * inv),
-                        "width":  int(r["width"]  * inv),
-                        "height": int(r["height"] * inv),
-                    }
-                found.append(parsed)
-            except Exception as exc:
-                log.warning(
-                    "Could not parse barcode object (type=%s fields=%s): %s",
-                    type(bc).__name__,
-                    getattr(bc, "_fields", "?"),
-                    exc,
-                )
-
-    # ── Pass B: OpenCV QR decoder as secondary engine ──────────────────────────
-    #   cv2.QRCodeDetector uses a completely different binarisation & ECC path
-    #   than libzbar and regularly succeeds where pyzbar fails (and vice-versa).
-    for cv2_bc in _cv2_qr_detect(gray):
+def _cv2_dedup_and_add(cv2_results: list[dict], found: list[dict], seen: set,
+                       offset_x: int = 0, offset_y: int = 0) -> None:
+    """Add cv2 QR results to *found*, deduplicating against existing."""
+    for cv2_bc in cv2_results:
+        if offset_x or offset_y:
+            cv2_bc["polygon"] = [
+                {"x": p["x"] + offset_x, "y": p["y"] + offset_y}
+                for p in cv2_bc["polygon"]
+            ]
+            r = cv2_bc["bounding_rect"]
+            cv2_bc["bounding_rect"] = {
+                "left": r["left"] + offset_x, "top": r["top"] + offset_y,
+                "width": r["width"], "height": r["height"],
+            }
         r = cv2_bc["bounding_rect"]
         cx = r["left"] + r["width"] // 2
         cy = r["top"]  + r["height"] // 2
@@ -2004,28 +2009,152 @@ def _run_barcode_detection(img_bgr: np.ndarray) -> list[dict]:
         seen.add(key)
         found.append(cv2_bc)
 
-    # Also try cv2 on the enhanced variants that helped pyzbar
+
+def _run_barcode_detection(img_bgr: np.ndarray) -> list[dict]:
+    """
+    Detect and decode **all** barcodes in a BGR image.
+
+    Runs a comprehensive multi-pass strategy to maximise recall even on
+    poorly printed, damaged, low-contrast, blurred, or very small barcodes:
+
+      1. **pyzbar** on 8+ preprocessed image variants (original colour,
+         histogram-equalised, CLAHE, adaptive threshold, Otsu, sharpened,
+         morphological close + Otsu, 2× upscale).
+      2. **OpenCV QRCodeDetector** (``detectAndDecodeMulti``) as a full
+         secondary decoder – its Reed-Solomon implementation catches QR
+         codes that libzbar cannot reconstruct.
+      3. **Region-based re-scan**: after full-image passes, previously
+         decoded barcode regions are masked out and the remainder is
+         scanned again.  This defeats libzbar's tendency to return only
+         *one* result when multiple identical barcodes are present.
+      4. Position-aware deduplication ensures each physical barcode is
+         reported exactly once even when multiple passes decode it.
+    """
+    from pyzbar import pyzbar
+
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    h_orig, w_orig = img_bgr.shape[:2]
+
+    # ── Generate all preprocessed variants ─────────────────────────────────────
+    variants = _build_preprocessed_images(img_bgr)
+
+    found: list[dict] = []
+    seen:  set        = set()
+
+    # ── Pass A: pyzbar on every variant ────────────────────────────────────────
+    for src in variants:
+        src_h = src.shape[0]
+        scale = src_h / h_orig if h_orig > 0 else 1.0
+        _pyzbar_scan(src, scale, h_orig, found, seen)
+
+    # ── Pass B: OpenCV QR decoder as secondary engine ──────────────────────────
+    _cv2_dedup_and_add(_cv2_qr_detect(gray), found, seen)
     for extra_gray in (cv2.equalizeHist(gray),):
-        for cv2_bc in _cv2_qr_detect(extra_gray):
-            r = cv2_bc["bounding_rect"]
-            cx = r["left"] + r["width"] // 2
-            cy = r["top"]  + r["height"] // 2
-            key = (cv2_bc["data"].encode("utf-8", errors="replace"), "QRCODE", cx // 50, cy // 50)
-            if key in seen:
+        _cv2_dedup_and_add(_cv2_qr_detect(extra_gray), found, seen)
+
+    # ── Pass C: Region-mask re-scan ────────────────────────────────────────────
+    #   pyzbar/libzbar often returns only ONE barcode per image even when
+    #   multiple are present (especially with identical data).  We mask out
+    #   every already-found barcode with white, then re-scan to pick up the
+    #   rest.  Repeat until no new barcodes appear (max 10 rounds).
+    if found:
+        mask_img_bgr = img_bgr.copy()
+        prev_count = 0
+        for _round in range(10):
+            if len(found) == prev_count and _round > 0:
+                break
+            prev_count = len(found)
+            # White-out every known barcode region (with generous padding)
+            for b in found:
+                r = b["bounding_rect"]
+                pad = max(r["width"], r["height"]) // 4 + 10
+                x1 = max(0, r["left"] - pad)
+                y1 = max(0, r["top"]  - pad)
+                x2 = min(w_orig, r["left"] + r["width"]  + pad)
+                y2 = min(h_orig, r["top"]  + r["height"] + pad)
+                mask_img_bgr[y1:y2, x1:x2] = 255
+
+            # pyzbar on masked image (original + CLAHE)
+            masked_rgb = cv2.cvtColor(mask_img_bgr, cv2.COLOR_BGR2RGB)
+            _pyzbar_scan(masked_rgb, 1.0, h_orig, found, seen)
+
+            try:
+                lab = cv2.cvtColor(mask_img_bgr, cv2.COLOR_BGR2LAB)
+                l, a, b_ch = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                lab = cv2.merge([clahe.apply(l), a, b_ch])
+                clahe_rgb = cv2.cvtColor(cv2.cvtColor(lab, cv2.COLOR_LAB2BGR), cv2.COLOR_BGR2RGB)
+                _pyzbar_scan(clahe_rgb, 1.0, h_orig, found, seen)
+            except Exception:
+                pass
+
+            # cv2 QR on masked grayscale
+            masked_gray = cv2.cvtColor(mask_img_bgr, cv2.COLOR_BGR2GRAY)
+            _cv2_dedup_and_add(_cv2_qr_detect(masked_gray), found, seen)
+
+    # ── Pass D: Tile-based scan for large images ───────────────────────────────
+    #   Scan overlapping quadrants so that barcodes near the centre that span
+    #   a tile boundary still get a chance in at least one tile.
+    if max(h_orig, w_orig) >= 600:
+        tile_specs = [
+            (0, 0, w_orig // 2 + w_orig // 8, h_orig // 2 + h_orig // 8),
+            (w_orig // 2 - w_orig // 8, 0, w_orig, h_orig // 2 + h_orig // 8),
+            (0, h_orig // 2 - h_orig // 8, w_orig // 2 + w_orig // 8, h_orig),
+            (w_orig // 2 - w_orig // 8, h_orig // 2 - h_orig // 8, w_orig, h_orig),
+        ]
+        for tx1, ty1, tx2, ty2 in tile_specs:
+            tile = img_bgr[ty1:ty2, tx1:tx2]
+            if tile.size == 0:
                 continue
-            seen.add(key)
-            found.append(cv2_bc)
+            tile_rgb = cv2.cvtColor(tile, cv2.COLOR_BGR2RGB)
+            # pyzbar on tile
+            for bc in pyzbar.decode(Image.fromarray(tile_rgb)):
+                rect = getattr(bc, "rect", None)
+                # Map tile coords back to full image
+                abs_rect = None
+                if rect is not None:
+                    try:
+                        abs_rect = type(rect)(
+                            rect.left + tx1, rect.top + ty1, rect.width, rect.height)
+                    except Exception:
+                        abs_rect = (rect[0] + tx1, rect[1] + ty1, rect[2], rect[3])
+                qx, qy = _dedup_key_from_rect(abs_rect, 1.0)
+                key = (bc.data, bc.type, qx, qy)
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    parsed = _parse_barcode(bc)
+                    # Offset polygon & rect to full-image coordinates
+                    parsed["polygon"] = [
+                        {"x": p["x"] + tx1, "y": p["y"] + ty1}
+                        for p in parsed["polygon"]
+                    ]
+                    r = parsed["bounding_rect"]
+                    parsed["bounding_rect"] = {
+                        "left": r["left"] + tx1, "top": r["top"] + ty1,
+                        "width": r["width"], "height": r["height"],
+                    }
+                    # Only add if not overlapping an existing barcode
+                    if not _barcode_overlaps_any(parsed, found):
+                        found.append(parsed)
+                except Exception:
+                    pass
+
+            # cv2 QR on tile grayscale
+            tile_gray = cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY)
+            _cv2_dedup_and_add(
+                _cv2_qr_detect(tile_gray), found, seen,
+                offset_x=tx1, offset_y=ty1,
+            )
 
     # ── Patch zero-polygon QR codes ────────────────────────────────────────────
-    #   Some libzbar builds return correct data but zero bounding rects for QR.
-    #   Use cv2 positions to fill them in.
     needs_patch = [
         b for b in found
         if b["symbology"] == "QRCODE" and b["bounding_rect"]["width"] == 0
     ]
     if needs_patch:
         cv2_results = _cv2_qr_detect(gray)
-        # Group by text → list of bounding dicts
         pos_map: dict[str, list[dict]] = {}
         for cr in cv2_results:
             pos_map.setdefault(cr["data"], []).append(cr)
